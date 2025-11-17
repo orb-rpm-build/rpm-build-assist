@@ -1,0 +1,97 @@
+# Example configuration file for rpm-build-assist
+#
+# This file demonstrates various configuration options.
+# Copy this to build-assist.yaml and customize for your needs.
+
+# Base mock configuration to use for all builds
+# This should match a configuration file in /etc/mock/
+base: fedora-39-x86_64
+
+# Build section: Define source repositories and packages to build
+build:
+  # Example 1: Build from Fedora dist-git
+  - type: dist-git
+    url: https://src.fedoraproject.org/rpms/
+    packages:
+      # Format: package-name:branch
+      - htop:rawhide
+      - tmux:f39
+      # If no branch specified, 'main' is used
+      - vim
+
+  # Example 2: Build from GitHub
+  - type: git
+    url: https://github.com/yourorg/
+    packages:
+      - myapp:main
+      - mylib:v1.0.0
+
+# Install section (optional): Define how packages will be installed
+# This section affects build configuration (e.g., RPM macros)
+install:
+  # Installation type determines the target and build configuration
+  # Options: flatpak, software-collection, container, install-media, live-usb
+  type: flatpak
+
+  # List of packages to install from those built above
+  packages:
+    - myapp
+    - mylib
+
+# Additional examples below (uncomment to use):
+
+# ---
+# # Example: Software Collection Build
+# base: fedora-39-x86_64
+#
+# build:
+#   - type: git
+#     url: https://example.com/scl/
+#     packages:
+#       - python311:main
+#       - python311-pip:main
+#       - python311-setuptools:main
+#
+# install:
+#   type: software-collection
+#   # Collection name - packages will install to /opt/python311
+#   collection: python311
+#   packages:
+#     - python311
+#     - python311-pip
+#     - python311-setuptools
+
+# ---
+# # Example: Container Image Build
+# base: fedora-39-x86_64
+#
+# build:
+#   - type: dist-git
+#     url: https://src.fedoraproject.org/rpms/
+#     packages:
+#       - nginx:rawhide
+#       - postgresql:f39
+#
+#   - type: git
+#     url: https://github.com/company/
+#     packages:
+#       - webapp:v2.0
+#
+# install:
+#   type: container
+#   packages:
+#     - nginx
+#     - postgresql
+#     - webapp
+
+# ---
+# # Example: Simple build without installation
+# base: fedora-39-x86_64
+#
+# build:
+#   - type: dist-git
+#     url: https://src.fedoraproject.org/rpms/
+#     packages:
+#       - kernel:rawhide
+#       - systemd:rawhide
+# # No install section - just build the packages

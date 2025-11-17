@@ -1,0 +1,20 @@
+# rpm-build-assist configuration file
+#
+# Quick start configuration - customize for your needs
+# See build-assist.yaml.example for more examples
+
+# Mock configuration to use (must exist in /etc/mock/)
+base: fedora-39-x86_64
+
+# Define packages to build
+build:
+  - type: dist-git
+    url: https://src.fedoraproject.org/rpms/
+    packages:
+      - htop:rawhide
+
+# Optional: Define installation target
+# install:
+#   type: flatpak
+#   packages:
+#     - htop
