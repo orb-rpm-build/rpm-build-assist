@@ -13,7 +13,7 @@ build:
 
 install:                     # Optional
   type: <install-type>       # Required if install section present
-  collection: <name>         # Required for software-collection type
+  collection: <name>         # Required for software-collection and package-collection types
   packages:                  # Required if install section present
     - <package-name>
 ```
@@ -85,15 +85,28 @@ The installation target type.
 - `software-collection` - Software Collection
   - Sets RPM prefix to `/opt/{collection}`
   - Requires `collection` field
+- `package-collection` - Package collection with rpath library discovery
+  - Sets RPM prefix to `/opt/{collection}`
+  - Configures gcc LD_RUN_PATH to use rpath with $ORIGIN and $LIB for library discovery
+  - Requires `collection` field
 - `container` - Container image
 - `install-media` - Installation media/ISO
 - `live-usb` - Live USB image
 
-#### collection (required for software-collection, string)
+#### collection (required for software-collection and package-collection, string)
 
-Name of the software collection. Used to construct the installation prefix `/opt/{collection}`.
+Name of the collection. Used to construct the installation prefix `/opt/{collection}`.
 
-**Example:** `python311`
+For `software-collection`, this creates a traditional software collection that typically requires
+environment setup scripts or LD_LIBRARY_PATH configuration.
+
+For `package-collection`, this creates a collection where packages have rpath configured using
+$ORIGIN and $LIB, allowing binaries to find shared libraries without requiring LD_LIBRARY_PATH
+or wrapper scripts.
+
+**Examples:**
+- `python311` (for software collections)
+- `myapp-stack` (for package collections)
 
 #### packages (required if install present, list of strings)
 
@@ -195,6 +208,30 @@ install:
     - company-theme
 ```
 
+### Example 5: Package Collection Build
+
+```yaml
+base: fedora-39-x86_64
+
+build:
+  - type: git
+    url: https://internal.example.com/apps/
+    packages:
+      - myapp:main
+      - myapp-libs:main
+
+install:
+  type: package-collection
+  collection: myapp-stack
+  packages:
+    - myapp
+    - myapp-libs
+```
+
+**Effect:** Packages are built with `_prefix=/opt/myapp-stack` and LD_RUN_PATH includes `$ORIGIN/../$LIB` so that binaries can find shared libraries using both relative and absolute paths without needing to set LD_LIBRARY_PATH.
+
+**Key Difference from Software Collections:** Unlike software collections which typically require wrapper scripts or environment modules to set LD_LIBRARY_PATH, package-collection packages have the library search path embedded directly in the binaries using gcc's rpath mechanism with GNU ld.so's `$ORIGIN` (runtime binary location) and `$LIB` (lib/lib64 platform detection) tokens.
+
 ## RPM Macro Reference
 
 ### Standard Installation Paths
@@ -241,6 +278,26 @@ Example for `collection: python311`:
 | `_libdir` | `/opt/python311/lib` |
 | `_datadir` | `/opt/python311/share` |
 | `scl` | `python311` |
+
+### Package Collection Modifications
+
+When `install.type: package-collection`, all paths are prefixed with `/opt/{collection}` and build flags include rpath directives with $ORIGIN and $LIB:
+
+Example for `collection: myapp-stack`:
+
+| Macro | Package Collection Value |
+|-------|--------------------------|
+| `_prefix` | `/opt/myapp-stack` |
+| `_bindir` | `/opt/myapp-stack/bin` |
+| `_libdir` | `/opt/myapp-stack/lib` |
+| `_datadir` | `/opt/myapp-stack/share` |
+| `set_build_flags` | `%{set_build_flags} ; LD_RUN_PATH=$ORIGIN/../$LIB` |
+
+The rpath configuration uses GNU ld.so dynamic tokens:
+- `$ORIGIN` - Expands to the directory containing the binary/library at runtime
+- `$LIB` - Expands to `lib` or `lib64` depending on the platform architecture
+
+This ensures that binaries can locate shared libraries using both relative paths (via `$ORIGIN/../$LIB`) and absolute paths (via `/opt/{collection}/$LIB`) at runtime without requiring LD_LIBRARY_PATH environment variables or wrapper scripts.
 
 ## Notes
 

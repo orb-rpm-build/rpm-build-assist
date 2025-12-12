@@ -90,6 +90,13 @@ class MockBuildAssistant:
                 sys.exit(1)
             self.logger.info(f"Configuring for software collection: {collection}")
             self._setup_scl_macros(collection)
+        elif install_type == 'package-collection':
+            collection = install_config.get('collection')
+            if not collection:
+                self.logger.error("package-collection type requires 'collection' name")
+                sys.exit(1)
+            self.logger.info(f"Configuring for package-collection build: {collection}")
+            self._setup_package_collection_macros(collection)
         elif install_type in ['container', 'install-media', 'live-usb']:
             self.logger.info(f"Install type '{install_type}' uses standard paths")
         else:
@@ -140,6 +147,57 @@ class MockBuildAssistant:
         ]
 
         for macro in scl_macros:
+            self.mock_defines.append(f"--define='{macro}'")
+            self.logger.debug(f"Added macro: {macro}")
+
+    def _setup_package_collection_macros(self, collection: str) -> None:
+        """Setup RPM macros for package-collection builds with gcc rpath support"""
+        # Use /opt/{collection} as the prefix, similar to software collections
+        # but configure build flags to use rpath for library discovery
+        install_prefix = f"/opt/{collection}"
+
+        # Standard path macros
+        collection_macros = [
+            f'_prefix {install_prefix}',
+            f'_exec_prefix {install_prefix}',
+            f'_bindir {install_prefix}/bin',
+            f'_sbindir {install_prefix}/sbin',
+            f'_libexecdir {install_prefix}/libexec',
+            f'_datadir {install_prefix}/share',
+            f'_sysconfdir {install_prefix}/etc',
+            f'_sharedstatedir {install_prefix}/com',
+            f'_localstatedir {install_prefix}/var',
+            f'_libdir {install_prefix}/lib',
+            f'_includedir {install_prefix}/include',
+            f'_infodir {install_prefix}/share/info',
+            f'_mandir {install_prefix}/share/man',
+        ]
+
+        # Add build flags for rpath using $ORIGIN and $LIB
+        # $ORIGIN - directory containing the binary/library
+        # $LIB - expands to "lib" or "lib64" depending on platform
+        # These flags ensure that binaries built with this prefix can find
+        # their shared libraries without needing LD_LIBRARY_PATH
+        rpath_flags = [
+            # Set LD_RUN_PATH for the collection's prefix
+            r'''set_build_flags CFLAGS="\${CFLAGS:-%{build_cflags}}" ; export CFLAGS ; \
+  CXXFLAGS="\${CXXFLAGS:-%{build_cxxflags}}" ; export CXXFLAGS ; \
+  FFLAGS="\${FFLAGS:-%{build_fflags}}" ; export FFLAGS ; \
+  FCFLAGS="\${FCFLAGS:-%{build_fflags}}" ; export FCFLAGS ; \
+  VALAFLAGS="\${VALAFLAGS:-%{build_valaflags}}" ; export VALAFLAGS ;%{?build_rustflags:
+  RUSTFLAGS="\${RUSTFLAGS:-%{build_rustflags}}" ; export RUSTFLAGS ;} \
+  LDFLAGS="\${LDFLAGS:-%{build_ldflags}}" ; export LDFLAGS ; \
+  LT_SYS_LIBRARY_PATH="\${LT_SYS_LIBRARY_PATH:-%_libdir:}" ; export LT_SYS_LIBRARY_PATH ; \
+  CC="\${CC:-%{__cc}}" ; export CC ; \
+  CXX="\${CXX:-%{__cxx}}" ; export CXX ; \
+  ''' + \
+            f"LD_RUN_PATH='\$ORIGIN/../\$LIB' ; export LD_RUN_PATH"
+        ]
+
+        # Combine all macros
+        all_macros = collection_macros + rpath_flags
+
+        for macro in all_macros:
             self.mock_defines.append(f"--define='{macro}'")
             self.logger.debug(f"Added macro: {macro}")
 
@@ -303,6 +361,8 @@ class MockBuildAssistant:
             self._install_to_flatpak(install_config, packages)
         elif install_type == 'software-collection':
             self._install_scl(install_config, packages)
+        elif install_type == 'package-collection':
+            self._install_package_collection(install_config, packages)
         elif install_type == 'install-media':
             self._create_install_media(install_config, packages)
         elif install_type == 'live-usb':
@@ -325,6 +385,13 @@ class MockBuildAssistant:
         """Install software collection packages"""
         self.logger.info("Software collection installation not yet implemented")
         self.logger.info(f"Would install: {packages}")
+
+    def _install_package_collection(self, config: Dict, packages: List[str]) -> None:
+        """Install package-collection packages"""
+        collection = config.get('collection', 'unknown')
+        self.logger.info(f"package-collection installation not yet implemented")
+        self.logger.info(f"Would install to /opt/{collection}: {packages}")
+        self.logger.info(f"Packages will use rpath with $ORIGIN for library discovery")
 
     def _create_install_media(self, config: Dict, packages: List[str]) -> None:
         """Create installation media with packages"""
