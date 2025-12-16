@@ -7,7 +7,8 @@ A Python tool to build RPM packages using mock with SCM (Source Code Management)
 - Build multiple RPM packages from Git repositories using mock
 - Support for dist-git, git, and other SCM methods
 - Automatic macro configuration for flatpak and software collection builds
-- Local repository management for dependency resolution across builds
+- Local repository management with support for both temporary and persistent repositories
+- Dependency resolution across builds using mock's chain mode
 - Verbose logging support for debugging
 - YAML-based configuration for easy management
 
@@ -43,14 +44,18 @@ chmod +x rpm-build-assist
 # Enable verbose output
 ./rpm-build-assist -v
 
+# Use a persistent local repository
+./rpm-build-assist --localrepo /path/to/repo
+
 # Combine options
-./rpm-build-assist --verbose --config custom.yaml
+./rpm-build-assist --verbose --config custom.yaml --localrepo ~/rpm-builds/localrepo
 ```
 
 ### Command-line Arguments
 
 - `-c`, `--config FILE`: Path to YAML configuration file (default: `build-assist.yaml`)
 - `-v`, `--verbose`: Enable verbose output for detailed logging
+- `--localrepo PATH`: Path to local repository directory (default: create temporary directory)
 
 ## Configuration File Format
 
@@ -223,7 +228,11 @@ install:
 
 2. **Install Section Processing**: If an install section is present, processes it first to determine if special RPM macros need to be defined (e.g., for flatpak or software collections)
 
-3. **Local Repository Setup**: Creates a temporary directory to store all built RPMs, allowing packages to depend on each other
+3. **Local Repository Setup**: Sets up a local repository directory to store all built RPMs, allowing packages to depend on each other
+   - Uses `--localrepo` CLI option if specified
+   - Otherwise uses `localrepo` from YAML config if specified
+   - Otherwise creates a temporary directory (default behavior)
+   - Creates the directory if it doesn't exist
 
 4. **Package Building**: For each package:
    - Constructs the full repository URL

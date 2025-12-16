@@ -23,18 +23,19 @@ from typing import Dict, List, Optional, Any
 class MockBuildAssistant:
     """Main class for managing RPM builds with mock"""
 
-    def __init__(self, config_file: str, verbose: bool = False):
+    def __init__(self, config_file: str, verbose: bool = False, localrepo: Optional[str] = None):
         """
         Initialize the build assistant
 
         Args:
             config_file: Path to the YAML configuration file
             verbose: Enable verbose logging
+            localrepo: Path to local repository (from CLI, takes precedence over config)
         """
         self.config_file = config_file
         self.verbose = verbose
         self.config: Dict[str, Any] = {}
-        self.localrepo_path: Optional[Path] = None
+        self.localrepo_path: Optional[Path] = Path(localrepo) if localrepo else None
         self.mock_defines: List[str] = []
 
         # Setup logging
@@ -202,9 +203,30 @@ class MockBuildAssistant:
             self.logger.debug(f"Added macro: {macro}")
 
     def setup_localrepo(self) -> None:
-        """Create a temporary directory for the local repository"""
-        self.localrepo_path = Path(tempfile.mkdtemp(prefix='mock-localrepo-'))
-        self.logger.info(f"Created local repository at: {self.localrepo_path}")
+        """
+        Setup the local repository directory.
+
+        Precedence:
+        1. CLI argument (--localrepo)
+        2. YAML config (localrepo key)
+        3. Temporary directory (default)
+        """
+
+        # Determine source of localrepo path
+        if self.localrepo_path:
+            # expanduser() handles ~ for home directory
+            self.localrepo_path = self.localrepo_path.expanduser().resolve()
+            self.localrepo_path.mkdir(parents=True, exist_ok=True)
+            self.logger.info(f"Using local repository from argument: {self.localrepo_path}")
+        elif 'localrepo' in self.config:
+            self.localrepo_path = Path(self.config['localrepo']).expanduser().resolve()
+            self.localrepo_path.mkdir(parents=True, exist_ok=True)
+            self.logger.info(f"Using local repository from configuration: {self.localrepo_path}")
+        else:
+            # Create temporary directory
+            self.localrepo_path = Path(tempfile.mkdtemp(prefix='mock-localrepo-'))
+            self.logger.info(f"Created temporary local repository at: {self.localrepo_path}")
+
 
     def build_packages(self) -> None:
         """Build all packages defined in the build section"""
@@ -406,8 +428,14 @@ class MockBuildAssistant:
     def cleanup(self) -> None:
         """Cleanup temporary directories"""
         if self.localrepo_path and self.localrepo_path.exists():
-            self.logger.info(f"Local repository preserved at: {self.localrepo_path}")
-            self.logger.info("You can remove it manually when done")
+            # Check if it's a temporary directory by path prefix
+            is_temp = str(self.localrepo_path).startswith(tempfile.gettempdir())
+
+            if is_temp:
+                self.logger.info(f"Temporary local repository preserved at: {self.localrepo_path}")
+                self.logger.info("You can remove it manually when done")
+            else:
+                self.logger.info(f"Local repository available at: {self.localrepo_path}")
 
     def run(self) -> None:
         """Main execution flow"""
@@ -434,10 +462,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                          # Use default build-assist.yaml
-  %(prog)s -c my-config.yaml        # Use custom config file
-  %(prog)s -v                       # Verbose output
-  %(prog)s --verbose -c config.yaml # Verbose with custom config
+  %(prog)s                                    # Use default build-assist.yaml
+  %(prog)s -c my-config.yaml                  # Use custom config file
+  %(prog)s -v                                 # Verbose output
+  %(prog)s --verbose -c config.yaml           # Verbose with custom config
+  %(prog)s --localrepo /path/to/repo          # Use persistent local repository
         """
     )
 
@@ -453,9 +482,17 @@ Examples:
         help='Enable verbose output'
     )
 
+    parser.add_argument(
+        '--localrepo',
+        type=str,
+        default=None,
+        metavar='PATH',
+        help='Path to local repository directory (default: create temporary directory)'
+    )
+
     args = parser.parse_args()
 
-    assistant = MockBuildAssistant(args.config, args.verbose)
+    assistant = MockBuildAssistant(args.config, args.verbose, args.localrepo)
     assistant.run()
 
 

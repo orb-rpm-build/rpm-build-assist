@@ -7,6 +7,11 @@
 # This should match a configuration file in /etc/mock/
 base: fedora-39-x86_64
 
+# Optional: Specify a persistent local repository directory
+# If not specified, a temporary directory will be created
+# Useful for preserving built RPMs between runs or sharing across build configs
+# localrepo: /home/user/rpm-builds/localrepo
+
 # Build section: Define source repositories and packages to build
 build:
   # Example 1: Build from Fedora dist-git

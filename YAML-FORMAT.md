@@ -4,6 +4,7 @@
 
 ```yaml
 base: <mock-config>
+localrepo: <path>            # Optional, path to local repository directory
 
 build:
   - type: <scm-type>        # Optional, default: dist-git
@@ -29,6 +30,29 @@ The mock configuration to use for building packages.
 - `fedora-40-aarch64`
 - `epel-9-x86_64`
 - `centos-stream-9-x86_64`
+
+### localrepo (optional, string)
+
+Path to a directory to use as the local repository for built RPMs.
+
+If not specified, a temporary directory will be created automatically.
+
+**Example values:**
+- `/home/user/rpm-builds/localrepo`
+- `~/builds/my-project-repo`
+- `./localrepo` (relative to current directory)
+
+**Behavior:**
+- If the directory doesn't exist, it will be created automatically (including parent directories)
+- If the directory exists, it will be reused (useful for incremental builds across multiple runs)
+- The `--localrepo` command-line option takes precedence over this YAML setting
+- If neither CLI option nor YAML config is specified, a temporary directory is created
+
+**Use cases:**
+- Preserve built RPMs between runs for faster rebuilds
+- Share a repository across multiple build configurations
+- Debug build issues by inspecting repository contents
+- Reuse previously built dependencies without rebuilding
 
 ### build (required, list)
 
