@@ -12,12 +12,13 @@ import argparse
 import glob
 import logging
 import os
+import re
 import sys
 import subprocess
 import tempfile
 import yaml
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 
 class MockBuildAssistant:
@@ -437,6 +438,187 @@ class MockBuildAssistant:
             else:
                 self.logger.info(f"Local repository available at: {self.localrepo_path}")
 
+    def _get_remote_branches(self, repo_url: str, package: str) -> List[str]:
+        """
+        Get list of branches from a remote repository.
+
+        Args:
+            repo_url: Base URL of the repository
+            package: Package name
+
+        Returns:
+            List of branch names
+        """
+        full_url = f"{repo_url.rstrip('/')}/{package}.git"
+
+        try:
+            # Use git ls-remote to get branches without cloning
+            result = subprocess.run(
+                ['git', 'ls-remote', '--heads', full_url],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+
+            if result.returncode != 0:
+                self.logger.warning(f"Could not fetch branches for {package}: {result.stderr.strip()}")
+                return []
+
+            # Parse output: "hash\trefs/heads/branch-name"
+            branches = []
+            for line in result.stdout.strip().split('\n'):
+                if line and '\t' in line:
+                    ref = line.split('\t')[1]
+                    if ref.startswith('refs/heads/'):
+                        branch = ref.replace('refs/heads/', '')
+                        branches.append(branch)
+
+            return branches
+
+        except subprocess.TimeoutExpired:
+            self.logger.warning(f"Timeout fetching branches for {package}")
+            return []
+        except Exception as e:
+            self.logger.warning(f"Error fetching branches for {package}: {e}")
+            return []
+
+    def _parse_branch_number(self, branch: str, prefix: str) -> Optional[int]:
+        """
+        Extract the numeric version from a branch name.
+
+        Args:
+            branch: Branch name (e.g., "f40", "release-2")
+            prefix: Expected prefix ("f" or "release-")
+
+        Returns:
+            The numeric version or None if not a match
+        """
+        if prefix == 'f':
+            match = re.match(r'^f(\d+)$', branch)
+        elif prefix == 'release-':
+            match = re.match(r'^release-(\d+)$', branch)
+        else:
+            return None
+
+        return int(match.group(1)) if match else None
+
+    def _find_newer_branch(self, current_branch: str, all_branches: List[str],
+                          include_main: bool) -> Optional[str]:
+        """
+        Find the newest branch compared to the current branch.
+
+        Args:
+            current_branch: The branch currently in use
+            all_branches: List of all available branches
+            include_main: Whether to consider 'main' as a newer branch
+
+        Returns:
+            The newest branch name, or None if current is newest
+        """
+        # If current is main, it's already the newest
+        if current_branch == 'main':
+            return None
+
+        # Check if main exists and should be reported
+        if include_main and 'main' in all_branches:
+            return 'main'
+
+        # Determine the branch type
+        current_fedora = self._parse_branch_number(current_branch, 'f')
+        current_release = self._parse_branch_number(current_branch, 'release-')
+
+        newest_branch = current_branch
+        newest_number = None
+
+        if current_fedora is not None:
+            # Looking for newer Fedora branches
+            newest_number = current_fedora
+            for branch in all_branches:
+                branch_num = self._parse_branch_number(branch, 'f')
+                if branch_num is not None and branch_num > newest_number:
+                    newest_number = branch_num
+                    newest_branch = branch
+
+        elif current_release is not None:
+            # Looking for newer release branches
+            newest_number = current_release
+            for branch in all_branches:
+                branch_num = self._parse_branch_number(branch, 'release-')
+                if branch_num is not None and branch_num > newest_number:
+                    newest_number = branch_num
+                    newest_branch = branch
+
+        # Return None if no newer branch found
+        return newest_branch if newest_branch != current_branch else None
+
+    def process_branches(self, include_main: bool = False) -> None:
+        """Check for outdated branches in the configuration"""
+        self.logger.info("Checking for outdated branches...")
+
+        outdated_packages = []
+
+        for build_source in self.config['build']:
+            source_url = build_source.get('url', '')
+            packages = build_source.get('packages', [])
+
+            if not source_url:
+                continue
+
+            for package_spec in packages:
+                # Parse package:branch format
+                if ':' in package_spec:
+                    package, current_branch = package_spec.split(':', 1)
+                else:
+                    package = package_spec
+                    current_branch = 'main'
+
+                self.logger.debug(f"Checking {package}:{current_branch}...")
+
+                # Get all branches from remote
+                branches = self._get_remote_branches(source_url, package)
+
+                if not branches:
+                    self.logger.debug(f"  No branches found or unable to fetch")
+                    continue
+
+                self.logger.debug(f"  Found {len(branches)} branches")
+
+                # Check for newer branch
+                newer_branch = self._find_newer_branch(current_branch, branches, include_main)
+
+                if newer_branch:
+                    outdated_packages.append({
+                        'package': package,
+                        'current': current_branch,
+                        'newer': newer_branch,
+                    })
+                    self.logger.info(f"  {package}:{current_branch} -> {newer_branch}")
+
+        # Report results
+        if outdated_packages:
+            self.logger.info("")
+            self.logger.info("Packages using outdated branches:")
+            self.logger.info("")
+            for pkg in outdated_packages:
+                self.logger.info(f"  {pkg['package']}:{pkg['current']} -> {pkg['newer']}")
+            self.logger.info("")
+            self.logger.info(f"Found {len(outdated_packages)} package(s) with outdated branches")
+            sys.exit(1)
+        else:
+            self.logger.info("All packages are using the newest available branches!")
+
+    def check_branches(self, include_main: bool = False) -> None:
+        """Check for outdated branches in the configuration"""
+        try:
+            self.load_config()
+            self.process_branches(include_main)
+        except KeyboardInterrupt:
+            self.logger.warning("Build interrupted by user")
+            sys.exit(130)
+        except Exception as e:
+            self.logger.error(f"Unexpected error: {e}", exc_info=self.verbose)
+            sys.exit(1)
+
     def run(self) -> None:
         """Main execution flow"""
         try:
@@ -467,6 +649,8 @@ Examples:
   %(prog)s -v                                 # Verbose output
   %(prog)s --verbose -c config.yaml           # Verbose with custom config
   %(prog)s --localrepo /path/to/repo          # Use persistent local repository
+  %(prog)s --check-branches                   # Check for outdated branches
+  %(prog)s --check-branches --include-main    # Check and suggest 'main' branch
         """
     )
 
@@ -490,10 +674,27 @@ Examples:
         help='Path to local repository directory (default: create temporary directory)'
     )
 
+    parser.add_argument(
+        '--check-branches',
+        action='store_true',
+        help='Check for outdated branches without building'
+    )
+
+    parser.add_argument(
+        '--include-main',
+        action='store_true',
+        help='Include "main" branch in newer branch suggestions (use with --check-branches)'
+    )
+
     args = parser.parse_args()
 
     assistant = MockBuildAssistant(args.config, args.verbose, args.localrepo)
-    assistant.run()
+
+    # If checking branches, do that instead of building
+    if args.check_branches:
+        assistant.check_branches(args.include_main)
+    else:
+        assistant.run()
 
 
 if __name__ == '__main__':
