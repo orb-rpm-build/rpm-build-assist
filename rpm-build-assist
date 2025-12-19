@@ -193,7 +193,7 @@ class MockBuildAssistant:
   CC="\${CC:-%{__cc}}" ; export CC ; \
   CXX="\${CXX:-%{__cxx}}" ; export CXX ; \
   ''' + \
-            f"LD_RUN_PATH='\$ORIGIN/../\$LIB' ; export LD_RUN_PATH"
+            f"LD_RUN_PATH='\\$ORIGIN/../\\$LIB' ; export LD_RUN_PATH"
         ]
 
         # Combine all macros
