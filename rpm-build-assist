@@ -259,13 +259,9 @@ class MockBuildAssistant:
                        source_url: str, package: str, branch: str) -> None:
         """Build a single package using mock"""
         # Construct the full repository URL
-        if source_type == 'dist-git':
-            # For dist-git, append package name to base URL
-            if not source_url.endswith('/'):
-                source_url += '/'
-            repo_url = f"{source_url}{package}"
-        else:
-            repo_url = source_url
+        if not source_url.endswith('/'):
+            source_url += '/'
+        repo_url = f"{source_url}{package}"
 
         self.logger.debug(f"Repository URL: {repo_url}")
 
