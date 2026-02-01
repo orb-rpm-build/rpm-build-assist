@@ -276,17 +276,18 @@ class MockBuildAssistant:
             '--scm-option', f'package={package}',
             '--scm-option', f'branch={branch}',
             '--scm-option', f'spec={package}.spec',
-            '--scm-option', 'write_tar=False',
         ]
 
         # Add SCM get command based on type
         if source_type == 'dist-git':
             mock_cmd.extend([
+                '--scm-option', 'write_tar=False',
                 '--scm-option', f'distgit_get=git clone --branch {branch} {repo_url} {package}',
                 '--scm-option', f'distgit_src_get=spectool -g {package}.spec',
             ])
         elif source_type == 'git':
             mock_cmd.extend([
+                '--scm-option', 'write_tar=True',
                 '--scm-option', f'git_get=git clone --branch {branch} {repo_url} {package}',
             ])
 
