@@ -38,6 +38,7 @@ class MockBuildAssistant:
         self.config: Dict[str, Any] = {}
         self.localrepo_path: Optional[Path] = Path(localrepo) if localrepo else None
         self.mock_defines: List[str] = []
+        self.addrepo_urls: List[str] = []
 
         # Setup logging
         log_level = logging.DEBUG if verbose else logging.INFO
@@ -68,6 +69,19 @@ class MockBuildAssistant:
         if 'build' not in self.config:
             self.logger.error("Configuration must include 'build' field")
             sys.exit(1)
+
+        # Process addrepo field (optional)
+        if 'addrepo' in self.config:
+            addrepo = self.config['addrepo']
+            # Support both single URL string and list of URLs
+            if isinstance(addrepo, str):
+                self.addrepo_urls = [addrepo]
+            elif isinstance(addrepo, list):
+                self.addrepo_urls = addrepo
+            else:
+                self.logger.error("'addrepo' field must be a string or list of strings")
+                sys.exit(1)
+            self.logger.info(f"Additional repositories: {self.addrepo_urls}")
 
         self.logger.debug(f"Configuration loaded: {self.config}")
 
@@ -291,6 +305,10 @@ class MockBuildAssistant:
                 '--scm-option', f'git_get=git clone --branch {branch} {repo_url} {package}',
             ])
 
+        # Add additional repositories
+        for repo_url in self.addrepo_urls:
+            mock_cmd.extend(['--addrepo', repo_url])
+
         self.logger.debug(f"Executing mock command: {' '.join(mock_cmd)}")
 
         try:
@@ -334,6 +352,10 @@ class MockBuildAssistant:
         # Add any macro defines
         for define in self.mock_defines:
             mock_cmd.append(define)
+
+        # Add additional repositories
+        for repo_url in self.addrepo_urls:
+            mock_cmd.extend(['--addrepo', repo_url])
 
         self.logger.debug(f"Executing mock command: {' '.join(mock_cmd)}")
 

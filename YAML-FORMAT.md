@@ -5,6 +5,7 @@
 ```yaml
 base: <mock-config>
 localrepo: <path>            # Optional, path to local repository directory
+addrepo: <repo-url>          # Optional, additional repository URL(s)
 
 build:
   - type: <scm-type>        # Optional, default: dist-git
@@ -53,6 +54,34 @@ If not specified, a temporary directory will be created automatically.
 - Share a repository across multiple build configurations
 - Debug build issues by inspecting repository contents
 - Reuse previously built dependencies without rebuilding
+
+### addrepo (optional, string or list)
+
+Additional repository URLs to pass to mock with the `--addrepo=` flag. This allows mock to access extra package repositories during the build process.
+
+Can be specified as either:
+- A single URL string
+- A list of URL strings
+
+**Example values:**
+```yaml
+# Single repository
+addrepo: https://example.com/custom-repo/fedora-39-x86_64/
+
+# Multiple repositories
+addrepo:
+  - https://example.com/repo1/fedora-39-x86_64/
+  - https://example.com/repo2/fedora-39-x86_64/
+  - https://internal.company.com/packages/
+```
+
+**Use cases:**
+- Add dependencies from custom or third-party repositories
+- Access build-time dependencies not available in standard repos
+- Use company-internal or project-specific package repositories
+- Include COPR repositories or other community repos
+
+**Note:** The repository URLs are passed to both the source RPM build (`--buildsrpm`) and the binary RPM build (`--chain`) mock commands.
 
 ### build (required, list)
 
@@ -231,6 +260,32 @@ install:
     - webapp
     - company-theme
 ```
+
+### Example 4a: Using Additional Repositories
+
+```yaml
+base: fedora-39-x86_64
+
+# Add custom repositories for build dependencies
+addrepo:
+  - https://download.copr.fedorainfracloud.org/results/@company/custom-libs/fedora-39-x86_64/
+  - https://repo.example.com/internal/fedora-39-x86_64/
+
+build:
+  - type: git
+    url: https://github.com/company/
+    packages:
+      - webapp:v2.0
+      - webapp-plugins:v2.0
+
+install:
+  type: container
+  packages:
+    - webapp
+    - webapp-plugins
+```
+
+**Effect:** Mock will have access to packages from both additional repositories during the build, allowing webapp to use dependencies from the COPR repository or internal repo.
 
 ### Example 5: Package Collection Build
 

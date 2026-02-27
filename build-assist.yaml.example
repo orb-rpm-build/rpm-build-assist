@@ -12,6 +12,15 @@ base: fedora-39-x86_64
 # Useful for preserving built RPMs between runs or sharing across build configs
 # localrepo: /home/user/rpm-builds/localrepo
 
+# Optional: Specify additional repositories for mock to use during build
+# Can be a single URL or a list of URLs
+# These are passed to mock with --addrepo= flag
+# addrepo: https://download.copr.fedorainfracloud.org/results/@myproject/custom-libs/fedora-39-x86_64/
+# Or multiple repositories:
+# addrepo:
+#   - https://download.copr.fedorainfracloud.org/results/@myproject/custom-libs/fedora-39-x86_64/
+#   - https://repo.example.com/internal/fedora-39-x86_64/
+
 # Build section: Define source repositories and packages to build
 build:
   # Example 1: Build from Fedora dist-git
