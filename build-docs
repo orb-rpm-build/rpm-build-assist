@@ -1,0 +1,34 @@
+#!/bin/bash
+# Build rpm-build-assist documentation using a container
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Detect container runtime
+if command -v podman &> /dev/null; then
+    RUNTIME="podman"
+elif command -v docker &> /dev/null; then
+    RUNTIME="docker"
+else
+    echo "Error: Neither podman nor docker found"
+    echo "Please install podman or docker to build documentation"
+    exit 1
+fi
+
+echo "Building documentation with $RUNTIME..."
+
+# Build the documentation
+$RUNTIME run --rm \
+    -v "$SCRIPT_DIR/doc:/docs:Z" \
+    -w /docs \
+    python:3.11-slim \
+    bash -c "pip install -q -r requirements.txt && sphinx-build -b html source build/html"
+
+echo
+echo "✓ Documentation built successfully!"
+echo
+echo "View at: file://$SCRIPT_DIR/doc/build/html/index.html"
+echo
+echo "Or serve with: cd doc/build/html && python3 -m http.server 8000"
