@@ -7,10 +7,12 @@ A Python tool to build RPM packages using mock with SCM (Source Code Management)
 - Build multiple RPM packages from Git repositories using mock
 - Support for dist-git, git, and other SCM methods
 - Automatic macro configuration for flatpak and software collection builds
+- Container image creation with built packages installed
 - Local repository management with support for both temporary and persistent repositories
 - Dependency resolution across builds using mock's chain mode
 - Verbose logging support for debugging
 - YAML-based configuration for easy management
+- Automatic detection of podman or docker for container builds
 
 ## Requirements
 
@@ -18,6 +20,7 @@ A Python tool to build RPM packages using mock with SCM (Source Code Management)
 - mock (RPM building tool)
 - PyYAML library
 - Appropriate permissions to run mock (typically membership in the `mock` group)
+- podman or docker (optional, required for container install type)
 
 ### Installation
 
@@ -103,10 +106,14 @@ Defines how built packages will be installed. This section affects the build pro
 - **type** (required): Installation target type
   - `flatpak`: Builds for flatpak (uses `/app` prefix)
   - `software-collection`: Builds for software collection (uses `/opt/{collection}` prefix)
-  - `container`: Container image installation
-  - `install-media`: Installation media creation
-  - `live-usb`: Live USB image creation
-- **collection** (required for software-collection): Name of the software collection
+  - `package-collection`: Builds for package collection with rpath (uses `/opt/{collection}` prefix with $ORIGIN-based library discovery)
+  - `container`: Container image installation (creates container image with packages installed)
+  - `install-media`: Installation media creation (not yet implemented)
+  - `live-usb`: Live USB image creation (not yet implemented)
+- **collection** (required for software-collection and package-collection): Name of the collection
+- **base_image** (required for container): Base container image to start from
+- **tag** (required for container): Tag for the resulting container image
+- **registry** (optional for container): Registry to push the image to
 - **packages** (required): List of package names to install
 
 ```yaml
@@ -184,7 +191,43 @@ install:
 
 This configures the build to use `/opt/python311` as the prefix.
 
-### Example 4: Mixed Sources
+### Example 4: Container Image Build
+
+Build packages and create a container image:
+
+```yaml
+base: fedora-39-x86_64
+
+build:
+  - type: dist-git
+    url: https://src.fedoraproject.org/rpms/
+    packages:
+      - nginx:rawhide
+      - postgresql:f39
+
+  - type: git
+    url: https://github.com/company/
+    packages:
+      - webapp:v2.0
+
+install:
+  type: container
+  base_image: registry.fedoraproject.org/fedora:39
+  tag: company/webapp:v2.0
+  registry: quay.io/company  # Optional: push to registry
+  packages:
+    - nginx
+    - postgresql
+    - webapp
+```
+
+This builds all packages, then creates a container image with them installed. The image:
+- Starts from `registry.fedoraproject.org/fedora:39`
+- Installs nginx, postgresql, and webapp from the local repository
+- Is tagged as `company/webapp:v2.0`
+- Is pushed to `quay.io/company/webapp:v2.0` (if registry is specified)
+
+### Example 5: Mixed Sources
 
 Build from multiple repository sources:
 
@@ -240,7 +283,9 @@ install:
    - Uses `--chain` to enable dependency resolution from the local repository
    - Stores built RPMs in the local repository
 
-5. **Installation**: Processes the install section to install packages (implementation depends on install type)
+5. **Installation**: Processes the install section to install packages:
+   - For `container` type: Creates a Containerfile, builds image with packages, optionally pushes to registry
+   - For other types: Implementation depends on install type
 
 ## Mock Integration
 
@@ -293,6 +338,50 @@ The tool uses Python's logging module with two verbosity levels:
 - **Normal mode**: Shows INFO level messages (major steps and results)
 - **Verbose mode** (`-v`): Shows DEBUG level messages (detailed command execution and configuration)
 
+## Container Install Type
+
+The `container` install type builds a container image with your custom RPM packages installed. This is useful for:
+
+- Creating deployment-ready application containers
+- Testing packages in an isolated environment
+- Building container images with custom package versions
+- Distributing applications via container registries
+
+### How It Works
+
+1. Builds all specified RPM packages using mock
+2. Creates a temporary build context directory
+3. Copies the local RPM repository to the build context
+4. Generates a Containerfile that:
+   - Starts from the specified base image
+   - Sets up a DNF repository pointing to the local RPMs
+   - Installs the specified packages
+   - Cleans the DNF cache to minimize image size
+5. Builds the container image using podman or docker
+6. Optionally pushes the image to a registry
+
+### Container Configuration
+
+Required fields:
+- `base_image`: Base container image (e.g., `registry.fedoraproject.org/fedora:39`)
+- `tag`: Tag for the resulting image (e.g., `myapp:latest`)
+- `packages`: List of package names to install
+
+Optional fields:
+- `registry`: Registry to push to (e.g., `quay.io/myorg`)
+
+### Registry Authentication
+
+If pushing to a registry, authenticate first:
+
+```bash
+# For podman
+podman login quay.io
+
+# For docker
+docker login quay.io
+```
+
 ## Troubleshooting
 
 ### Permission Denied Errors
@@ -320,7 +409,26 @@ Ensure all required tools are installed:
 
 ```bash
 sudo dnf install mock python3-pyyaml git
+
+# For container builds, also install:
+sudo dnf install podman  # or docker
 ```
+
+### Container Build Issues
+
+**Error: "Neither podman nor docker found"**
+- Install podman: `sudo dnf install podman`
+- Or install docker: `sudo dnf install docker`
+
+**Error: "Failed to push container image"**
+- Ensure you're logged in: `podman login <registry>`
+- Check that the tag format is correct
+- Verify network connectivity to the registry
+
+**Image not found after build**
+- Check image exists: `podman images`
+- Verify the tag matches what was specified in config
+- Check for build errors in verbose output
 
 ## License
 

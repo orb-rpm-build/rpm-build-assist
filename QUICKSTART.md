@@ -139,6 +139,47 @@ install:
 
 Packages will install to `/opt/python311` instead of `/usr`.
 
+### Build a container image
+
+```yaml
+base: fedora-39-x86_64
+
+build:
+  - type: dist-git
+    url: https://src.fedoraproject.org/rpms/
+    packages:
+      - nginx:rawhide
+
+  - type: git
+    url: https://github.com/myorg/
+    packages:
+      - webapp:v1.0
+
+install:
+  type: container
+  base_image: registry.fedoraproject.org/fedora:39
+  tag: mywebapp:latest
+  packages:
+    - nginx
+    - webapp
+```
+
+This builds the packages, then creates a container image with them installed. Requires podman or docker.
+
+To push to a registry, add:
+```yaml
+install:
+  type: container
+  base_image: registry.fedoraproject.org/fedora:39
+  tag: mywebapp:v1.0
+  registry: quay.io/myorg
+  packages:
+    - nginx
+    - webapp
+```
+
+Don't forget to login first: `podman login quay.io`
+
 ## Troubleshooting
 
 ### "Permission denied" errors

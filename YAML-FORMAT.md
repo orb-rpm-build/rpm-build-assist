@@ -143,8 +143,11 @@ The installation target type.
   - Configures gcc LD_RUN_PATH to use rpath with $ORIGIN and $LIB for library discovery
   - Requires `collection` field
 - `container` - Container image
-- `install-media` - Installation media/ISO
-- `live-usb` - Live USB image
+  - Builds a container image with packages installed
+  - Requires `base_image` and `tag` fields
+  - Optional `registry` field for pushing to a registry
+- `install-media` - Installation media/ISO (not yet implemented)
+- `live-usb` - Live USB image (not yet implemented)
 
 #### collection (required for software-collection and package-collection, string)
 
@@ -160,6 +163,37 @@ or wrapper scripts.
 **Examples:**
 - `python311` (for software collections)
 - `myapp-stack` (for package collections)
+
+#### base_image (required for container install type, string)
+
+Base container image to use as the starting point for the container build.
+
+**Examples:**
+- `registry.fedoraproject.org/fedora:39`
+- `registry.fedoraproject.org/fedora:latest`
+- `quay.io/centos/centos:stream9`
+- `docker.io/library/alpine:latest`
+
+#### tag (required for container install type, string)
+
+Tag to assign to the built container image. Can include a registry prefix.
+
+**Examples:**
+- `myapp:latest`
+- `myapp:v1.0.0`
+- `company/myapp:1.0`
+- `quay.io/myorg/myapp:latest`
+
+#### registry (optional for container install type, string)
+
+Registry to push the built image to. If specified, the image will be tagged with the registry prefix and pushed after building.
+
+**Examples:**
+- `quay.io/myorg`
+- `docker.io/mycompany`
+- `registry.example.com:5000/project`
+
+**Note:** Authentication must be configured separately using `podman login` or `docker login`.
 
 #### packages (required if install present, list of strings)
 
@@ -228,7 +262,7 @@ install:
 
 **Effect:** Packages are built with `_prefix=/opt/python311`
 
-### Example 4: Multiple Sources
+### Example 4: Container Image Build
 
 ```yaml
 base: fedora-39-x86_64
@@ -255,11 +289,26 @@ build:
 
 install:
   type: container
+  base_image: registry.fedoraproject.org/fedora:39
+  tag: company/webapp:v2.0
+  registry: quay.io/company
   packages:
     - nginx
     - webapp
+    - webapp-plugins
     - company-theme
 ```
+
+**Effect:**
+1. Builds all specified packages and their dependencies
+2. Creates a Containerfile based on `registry.fedoraproject.org/fedora:39`
+3. Copies the local RPM repository into the container build context
+4. Installs nginx, webapp, webapp-plugins, and company-theme from the local repository
+5. Cleans the DNF cache to minimize image size
+6. Tags the resulting image as `company/webapp:v2.0`
+7. Pushes the image to `quay.io/company/webapp:v2.0`
+
+**Result:** A container image ready to run with all custom-built packages installed
 
 ### Example 4a: Using Additional Repositories
 

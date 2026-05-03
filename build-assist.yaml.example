@@ -93,6 +93,13 @@ install:
 #
 # install:
 #   type: container
+#   # Base container image to use
+#   base_image: registry.fedoraproject.org/fedora:39
+#   # Tag for the resulting image
+#   tag: myapp:latest
+#   # Optional: Registry to push to (if omitted, image is only built locally)
+#   # registry: quay.io/myorg
+#   # Packages to install in the container
 #   packages:
 #     - nginx
 #     - postgresql

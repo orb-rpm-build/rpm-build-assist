@@ -13,6 +13,7 @@ import glob
 import logging
 import os
 import re
+import shutil
 import sys
 import subprocess
 import tempfile
@@ -413,10 +414,254 @@ class MockBuildAssistant:
             self.logger.warning(f"Install type '{install_type}' not yet implemented")
 
     def _install_to_container(self, config: Dict, packages: List[str]) -> None:
-        """Install packages to a container image"""
-        self.logger.info("Container installation not yet implemented")
-        self.logger.info(f"Would install: {packages}")
-        self.logger.info(f"From local repo: {self.localrepo_path}")
+        """
+        Install packages to a container image.
+
+        Creates a container image with the specified packages installed from the
+        local repository.
+
+        Args:
+            config: Install configuration with:
+                - base_image: Base container image to use
+                - tag: Tag for the resulting image
+                - registry: (optional) Registry to push to
+            packages: List of package names to install
+        """
+        # Validate required fields
+        base_image = config.get('base_image')
+        image_tag = config.get('tag')
+
+        if not base_image:
+            self.logger.error("Container install type requires 'base_image' field")
+            sys.exit(1)
+        if not image_tag:
+            self.logger.error("Container install type requires 'tag' field")
+            sys.exit(1)
+
+        registry = config.get('registry')
+
+        self.logger.info(f"Building container image: {image_tag}")
+        self.logger.info(f"Base image: {base_image}")
+        self.logger.info(f"Installing packages: {', '.join(packages)}")
+
+        # Detect container runtime (prefer podman, fall back to docker)
+        container_runtime = self._detect_container_runtime()
+        self.logger.debug(f"Using container runtime: {container_runtime}")
+
+        # Create a temporary directory for the build context
+        with tempfile.TemporaryDirectory(prefix='rpm-build-container-') as build_dir:
+            build_path = Path(build_dir)
+
+            # Copy local repository to build context
+            localrepo_copy = build_path / 'localrepo'
+            self.logger.info(f"Copying local repository to build context...")
+            shutil.copytree(self.localrepo_path, localrepo_copy)
+
+            # Create Containerfile/Dockerfile
+            containerfile_path = build_path / 'Containerfile'
+            self._create_containerfile(
+                containerfile_path,
+                base_image,
+                packages
+            )
+
+            self.logger.debug(f"Created Containerfile at {containerfile_path}")
+
+            # Build the container image
+            self._build_container_image(
+                container_runtime,
+                build_path,
+                image_tag,
+                containerfile_path
+            )
+
+            # Push to registry if specified
+            if registry:
+                self._push_container_image(
+                    container_runtime,
+                    image_tag,
+                    registry
+                )
+
+        self.logger.info(f"Successfully created container image: {image_tag}")
+        if registry:
+            full_image_name = f"{registry}/{image_tag}"
+            self.logger.info(f"Pushed to registry: {full_image_name}")
+
+    def _detect_container_runtime(self) -> str:
+        """
+        Detect available container runtime (podman or docker).
+
+        Returns:
+            'podman' or 'docker'
+
+        Raises:
+            SystemExit if neither is available
+        """
+        # Try podman first (preferred for rootless containers)
+        try:
+            result = subprocess.run(
+                ['podman', '--version'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                return 'podman'
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+        # Fall back to docker
+        try:
+            result = subprocess.run(
+                ['docker', '--version'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                return 'docker'
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+        self.logger.error("Neither podman nor docker found. Install one to build containers.")
+        sys.exit(1)
+
+    def _create_containerfile(self, path: Path, base_image: str, packages: List[str]) -> None:
+        """
+        Create a Containerfile for building the image.
+
+        Args:
+            path: Path where the Containerfile should be written
+            base_image: Base container image
+            packages: List of packages to install
+        """
+        package_list = ' '.join(packages)
+
+        containerfile_content = f"""# Generated by rpm-build-assist
+FROM {base_image}
+
+# Copy local RPM repository
+COPY localrepo /tmp/localrepo
+
+# Create repository configuration for local builds
+RUN echo -e '[local-builds]\\n\\
+name=Local Built Packages\\n\\
+baseurl=file:///tmp/localrepo\\n\\
+enabled=1\\n\\
+gpgcheck=0\\n\\
+priority=1' > /etc/yum.repos.d/local-builds.repo
+
+# Install packages from local repository
+RUN dnf install -y {package_list} && \\
+    dnf clean all && \\
+    rm -rf /var/cache/dnf /tmp/localrepo
+
+# Default command
+CMD ["/bin/bash"]
+"""
+
+        with open(path, 'w') as f:
+            f.write(containerfile_content)
+
+        self.logger.debug(f"Containerfile content:\n{containerfile_content}")
+
+    def _build_container_image(self, runtime: str, build_dir: Path,
+                               tag: str, containerfile: Path) -> None:
+        """
+        Build the container image.
+
+        Args:
+            runtime: Container runtime to use ('podman' or 'docker')
+            build_dir: Build context directory
+            tag: Image tag
+            containerfile: Path to Containerfile/Dockerfile
+        """
+        self.logger.info(f"Building container image with {runtime}...")
+
+        build_cmd = [
+            runtime,
+            'build',
+            '-t', tag,
+            '-f', str(containerfile),
+            str(build_dir)
+        ]
+
+        self.logger.debug(f"Build command: {' '.join(build_cmd)}")
+
+        try:
+            if self.verbose:
+                # Show build output in verbose mode
+                subprocess.run(build_cmd, check=True, cwd=build_dir)
+            else:
+                # Capture output in normal mode
+                result = subprocess.run(
+                    build_cmd,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    cwd=build_dir
+                )
+                self.logger.debug(f"Build output: {result.stdout}")
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Failed to build container image: {e}")
+            if hasattr(e, 'stderr') and e.stderr:
+                self.logger.error(f"Build error output: {e.stderr}")
+            sys.exit(1)
+
+    def _push_container_image(self, runtime: str, tag: str, registry: str) -> None:
+        """
+        Push the container image to a registry.
+
+        Args:
+            runtime: Container runtime to use ('podman' or 'docker')
+            tag: Image tag
+            registry: Registry to push to
+        """
+        # Construct full registry path
+        # If tag already includes a registry, use it as-is
+        # Otherwise, prepend the registry
+        if '/' in tag and tag.split('/')[0].count('.') > 0:
+            # Tag already includes registry (has domain with dots)
+            full_tag = tag
+        else:
+            # Prepend registry
+            full_tag = f"{registry.rstrip('/')}/{tag}"
+
+        self.logger.info(f"Pushing image to registry: {full_tag}")
+
+        # Tag the image with the registry path if different
+        if full_tag != tag:
+            tag_cmd = [runtime, 'tag', tag, full_tag]
+            try:
+                subprocess.run(tag_cmd, check=True, capture_output=True)
+            except subprocess.CalledProcessError as e:
+                self.logger.error(f"Failed to tag image: {e}")
+                sys.exit(1)
+
+        # Push the image
+        push_cmd = [runtime, 'push', full_tag]
+
+        self.logger.debug(f"Push command: {' '.join(push_cmd)}")
+
+        try:
+            if self.verbose:
+                # Show push output in verbose mode
+                subprocess.run(push_cmd, check=True)
+            else:
+                # Capture output in normal mode
+                result = subprocess.run(
+                    push_cmd,
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+                self.logger.debug(f"Push output: {result.stdout}")
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Failed to push container image: {e}")
+            if hasattr(e, 'stderr') and e.stderr:
+                self.logger.error(f"Push error output: {e.stderr}")
+            sys.exit(1)
 
     def _install_to_flatpak(self, config: Dict, packages: List[str]) -> None:
         """Install packages to a flatpak"""
