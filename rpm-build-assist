@@ -452,10 +452,19 @@ class MockBuildAssistant:
         with tempfile.TemporaryDirectory(prefix='rpm-build-container-') as build_dir:
             build_path = Path(build_dir)
 
-            # Copy local repository to build context
+            # Find the actual repository with RPMs (mock creates results/{config}/ subdirectory)
+            base_config = self.config.get('base')
+            repo_source = self.localrepo_path / 'results' / base_config
+
+            if not repo_source.exists():
+                self.logger.error(f"Repository not found at {repo_source}")
+                self.logger.error("Ensure packages were built successfully before container installation")
+                sys.exit(1)
+
+            # Copy the actual repository (with RPMs and metadata) to build context
             localrepo_copy = build_path / 'localrepo'
-            self.logger.info(f"Copying local repository to build context...")
-            shutil.copytree(self.localrepo_path, localrepo_copy)
+            self.logger.info(f"Copying repository from {repo_source} to build context...")
+            shutil.copytree(repo_source, localrepo_copy)
 
             # Create Containerfile/Dockerfile
             containerfile_path = build_path / 'Containerfile'
