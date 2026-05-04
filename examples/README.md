@@ -18,13 +18,21 @@ cp examples/build-assist.yaml.example build-assist.yaml
 
 Comprehensive example showing all major features:
 - Building from dist-git and git repositories
-- Using persistent local repositories
+- Using persistent package repositories
 - Adding custom repository URLs
 - Flatpak builds
 - Software collections
 - Container image builds
 
 Uncomment and modify the sections you need.
+
+## Additional Examples
+
+For working examples that are tested as part of the project, see the `tests/` directory:
+- `tests/test-self-build-rpm.yaml` - Building rpm-build-assist as an RPM
+- `tests/test-self-build-container.yaml` - Building as a container image
+
+These test configurations serve as validated, working examples.
 
 ## More Examples
 

@@ -1,0 +1,197 @@
+#!/bin/bash
+# Test runner for rpm-build-assist
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Track results
+PASSED=0
+FAILED=0
+SKIPPED=0
+
+# Usage
+usage() {
+    cat <<EOF
+Usage: $0 [OPTIONS] [TEST_PATTERN]
+
+Run rpm-build-assist tests.
+
+OPTIONS:
+    -h, --help          Show this help message
+    -v, --verbose       Enable verbose output
+    -k, --keep          Keep build artifacts after test
+    --list              List available tests
+
+TEST_PATTERN:
+    Optional glob pattern to select tests (e.g., "test-*.yaml")
+    Default: run all tests in tests/ directory
+
+EXAMPLES:
+    $0                  # Run all tests
+    $0 -v               # Run all tests with verbose output
+    $0 test-self-*.yaml # Run only self-build tests
+    $0 --list           # List available tests
+
+ENVIRONMENT:
+    SKIP_MOCK_TESTS     Set to skip tests that require mock (for CI)
+    TEST_LOCALREPO      Path for test localrepo (default: ./test-localrepo)
+
+EOF
+    exit 0
+}
+
+# Parse arguments
+VERBOSE=false
+KEEP_ARTIFACTS=false
+LIST_ONLY=false
+TEST_PATTERN="test-*.yaml"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            usage
+            ;;
+        -v|--verbose)
+            VERBOSE=true
+            shift
+            ;;
+        -k|--keep)
+            KEEP_ARTIFACTS=true
+            shift
+            ;;
+        --list)
+            LIST_ONLY=true
+            shift
+            ;;
+        *)
+            TEST_PATTERN="$1"
+            shift
+            ;;
+    esac
+done
+
+# List tests if requested
+if [ "$LIST_ONLY" = true ]; then
+    echo "Available tests:"
+    for test in tests/$TEST_PATTERN; do
+        if [ -f "$test" ]; then
+            echo "  $(basename "$test")"
+        fi
+    done
+    exit 0
+fi
+
+# Check for mock group membership (skip if running as root)
+if [ "$(id -u)" -ne 0 ] && ! groups | grep -q mock && [ -z "$SKIP_MOCK_TESTS" ]; then
+    echo -e "${YELLOW}Warning: You are not in the mock group${NC}"
+    echo "Tests requiring mock will likely fail."
+    echo "Add yourself to mock group: sudo usermod -a -G mock \$USER"
+    echo "Or set SKIP_MOCK_TESTS=1 to skip mock tests"
+    echo
+fi
+
+# Setup test environment
+TEST_LOCALREPO="${TEST_LOCALREPO:-$SCRIPT_DIR/test-localrepo}"
+export TEST_LOCALREPO
+
+# Determine repository base URL (parent directory of working directory)
+REPO_BASE_URL="file://$(dirname "$SCRIPT_DIR")/"
+export REPO_BASE_URL
+
+echo "Running rpm-build-assist tests..."
+echo "Test localrepo: $TEST_LOCALREPO"
+echo "Repository base: $REPO_BASE_URL"
+echo
+
+# Find test files
+TEST_FILES=(tests/$TEST_PATTERN)
+
+if [ ${#TEST_FILES[@]} -eq 0 ] || [ ! -f "${TEST_FILES[0]}" ]; then
+    echo -e "${RED}ERROR: No tests found matching: $TEST_PATTERN${NC}"
+    exit 1
+fi
+
+# Run each test
+for test_file in "${TEST_FILES[@]}"; do
+    if [ ! -f "$test_file" ]; then
+        continue
+    fi
+
+    test_name=$(basename "$test_file" .yaml)
+
+    # Check if test should be skipped
+    if [ -n "$SKIP_MOCK_TESTS" ]; then
+        echo -e "${YELLOW}SKIP${NC} $test_name (SKIP_MOCK_TESTS set)"
+        SKIPPED=$((SKIPPED + 1))
+        continue
+    fi
+
+    echo -n "Running $test_name... "
+
+    # Prepare test-specific localrepo
+    test_localrepo="$TEST_LOCALREPO/$test_name"
+    mkdir -p "$test_localrepo"
+
+    # Create temporary test file with template substitution
+    test_file_tmp="/tmp/rpm-build-assist-test-$test_name.yaml"
+    sed "s|{{REPO_BASE_URL}}|$REPO_BASE_URL|g" "$test_file" > "$test_file_tmp"
+
+    # Run the test (disable set -e so failures don't exit the script)
+    set +e
+    if [ "$VERBOSE" = true ]; then
+        echo
+        ./rpm-build-assist -c "$test_file_tmp" -v --localrepo "$test_localrepo"
+        result=$?
+    else
+        ./rpm-build-assist -c "$test_file_tmp" --localrepo "$test_localrepo" > /tmp/rpm-build-assist-test-$test_name.log 2>&1
+        result=$?
+    fi
+    set -e
+
+    # Clean up temporary test file
+    rm -f "$test_file_tmp"
+
+    # Check result
+    if [ $result -eq 0 ]; then
+        echo -e "${GREEN}PASS${NC}"
+        PASSED=$((PASSED + 1))
+
+        # Clean up unless --keep specified
+        if [ "$KEEP_ARTIFACTS" = false ]; then
+            rm -rf "$test_localrepo"
+        fi
+    else
+        echo -e "${RED}FAIL${NC}"
+        FAILED=$((FAILED + 1))
+
+        if [ "$VERBOSE" = false ]; then
+            echo "  Log: /tmp/rpm-build-assist-test-$test_name.log"
+        fi
+    fi
+done
+
+# Clean up test localrepo directory if empty
+if [ "$KEEP_ARTIFACTS" = false ]; then
+    rmdir "$TEST_LOCALREPO" 2>/dev/null || true
+fi
+
+# Summary
+echo
+echo "Test Summary:"
+echo -e "  ${GREEN}Passed:${NC}  $PASSED"
+echo -e "  ${RED}Failed:${NC}  $FAILED"
+echo -e "  ${YELLOW}Skipped:${NC} $SKIPPED"
+echo
+
+if [ $FAILED -gt 0 ]; then
+    exit 1
+fi
+
+exit 0

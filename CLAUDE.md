@@ -68,24 +68,28 @@ Located in `doc/source/`, organized as:
 
 ### When Adding Features
 
-**Always update documentation when adding features:**
+**Always update documentation and tests when adding features:**
 
 1. **New install type:**
    - Add to `reference/install_types.rst`
    - Add to `format/install_section.rst`
+   - Create test in `tests/test-{feature}.yaml`
    - Consider adding tutorial if complex
 
 2. **New SCM type:**
    - Add to `reference/scm_types.rst`
    - Update `format/build_section.rst`
+   - Create or update test in `tests/`
 
 3. **New CLI option:**
    - Add to `reference/command_line.rst`
    - Update `main_using.rst` if it changes workflow
+   - Add test coverage if testable
 
 4. **New YAML field:**
    - Add to appropriate `format/*.rst` file
-   - Add or update relevant example in `examples/`
+   - Add or update relevant test in `tests/`
+   - Optionally add example in `examples/`
 
 ### Documentation Best Practices
 
@@ -147,10 +151,11 @@ Fix any Sphinx warnings - they indicate broken references or formatting issues.
 ### Adding a New Installation Type
 
 1. Implement the installation type in the codebase
-2. Update `doc/source/reference/install_types.rst` with full description
-3. Update `doc/source/format/install_section.rst` with YAML fields
-4. Create a dedicated example file in `examples/` demonstrating the installation type
-5. Consider adding tutorial if workflow is complex
+2. Create test in `tests/test-{install-type}.yaml` validating the feature
+3. Update `doc/source/reference/install_types.rst` with full description
+4. Update `doc/source/format/install_section.rst` with YAML fields
+5. Optionally create example file in `examples/` if complex
+6. Consider adding tutorial if workflow is complex
 
 ### Adding a New SCM Type
 
@@ -232,14 +237,19 @@ Fix any Sphinx warnings - they indicate broken references or formatting issues.
 ```
 rpm-build-assist/
 ├── rpm-build-assist           # Main entry point (currently a single script)
+├── rpm-build-assist.spec      # RPM spec for building the tool itself
 ├── build-docs                 # Doc build script
+├── run-tests                  # Test runner script
 ├── README.md                  # Project overview (keep concise)
 ├── README-DOCS.md            # Quick doc reference
 ├── CLAUDE.md                 # This file
 ├── .readthedocs.yaml         # Read the Docs config
 ├── examples/                  # Example configurations
 │   ├── README.md
-│   └── *.yaml                # One example per installation type
+│   └── *.yaml                # Example configs
+├── tests/                     # Test configurations
+│   ├── README.md
+│   └── test-*.yaml           # Test cases (one per feature/scenario)
 └── doc/                       # Sphinx documentation
     ├── source/               # .rst files (29 files)
     │   ├── index.rst        # Doc homepage
@@ -252,16 +262,73 @@ rpm-build-assist/
     └── README.md            # Doc overview
 ```
 
-## Testing Checklist
+## Testing
+
+### Test Structure
+
+Tests are YAML configurations in `tests/` directory with a `test-` prefix. Each test validates specific functionality by running a complete build.
+
+### Running Tests
+
+Run all tests:
+```bash
+./run-tests
+```
+
+Run specific test:
+```bash
+./run-tests test-self-build-rpm.yaml
+```
+
+Run with verbose output:
+```bash
+./run-tests -v
+```
+
+### Writing Tests
+
+Create `tests/test-{feature}-{scenario}.yaml`:
+
+```yaml
+# Test: Brief description of what this validates
+
+base: fedora-44-x86_64
+
+build:
+  - type: git
+    url: {{REPO_BASE_URL}}
+    packages:
+      - package-name:branch
+
+install:
+  type: standard
+```
+
+Guidelines:
+- One feature per test
+- Self-contained (no dependencies on other tests)
+- Fast (prefer simple packages)
+- Well-documented with comments
+- No `localrepo` field (test runner provides this)
+- Use `{{REPO_BASE_URL}}` template variable to test the working directory
+
+Template variables:
+- `{{REPO_BASE_URL}}` - Substituted with parent directory as file:// URL (e.g., `file:///home/user/git/orb-project/`)
+
+See `tests/README.md` for complete testing documentation.
+
+## Pre-Commit Checklist
 
 Before committing, verify:
 
 - [ ] Code runs without Python errors
 - [ ] Documentation builds without warnings: `./build-docs`
+- [ ] Tests pass: `./run-tests`
 - [ ] New features have documentation
+- [ ] New features have tests
 - [ ] YAML format changes are documented
 - [ ] Commit message is clear and specific
-- [ ] No generated files committed (doc/build/)
+- [ ] No generated files committed (doc/build/, test-localrepo/)
 
 ## Getting Help
 

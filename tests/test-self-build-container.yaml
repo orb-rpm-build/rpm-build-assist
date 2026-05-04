@@ -1,0 +1,33 @@
+# Test: Build rpm-build-assist as a container image
+#
+# Validates building rpm-build-assist and packaging it in a container.
+# Run via test runner:
+#   ./run-tests test-self-build-container.yaml
+#
+# Note: {{REPO_BASE_URL}} is substituted by the test runner with the
+# parent directory of the working directory (e.g., file:///home/user/git/orb-project/)
+
+base: fedora-44-x86_64
+
+build:
+  - type: git
+    url: {{REPO_BASE_URL}}
+    packages:
+      - rpm-build-assist:main
+
+# Container installation
+install:
+  type: container
+
+  # Base container image
+  base_image: fedora:44
+
+  # Packages to install in the container
+  packages:
+    - rpm-build-assist
+
+  # Container image tags
+  tag: localhost/rpm-build-assist:latest
+
+  # Optionally push to a registry
+  # registry: quay.io/myuser/rpm-build-assist:latest
