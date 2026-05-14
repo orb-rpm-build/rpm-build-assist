@@ -331,25 +331,25 @@ Building Minimal Container Images
 ----------------------------------
 
 For production deployments, you may want to minimize container image size by
-using minimal base images that don't include DNF or other build tools. The
-``buildah`` build method enables this by installing packages from the host
-instead of inside the container.
+building from scratch with only the packages you need. The ``buildah`` build
+method enables this by using DNF on the host to install into an empty
+container filesystem.
 
 When to use buildah
 ~~~~~~~~~~~~~~~~~~~
 
 Use the buildah build method when:
 
-* You want the smallest possible image size
-* Using minimal base images (fedora-minimal, alpine-based, scratch-based)
+* You want the absolute smallest image size
+* Building from scratch with only required packages
 * Building production images where every megabyte counts
-* The base image doesn't include a package manager
+* You don't need a base OS - just your application and its dependencies
 
 Use the default containerfile method when:
 
 * You want simplicity and compatibility
 * Using standard base images (fedora, ubi, etc.)
-* The base image already includes DNF
+* The base image already includes DNF and base utilities
 * You don't have buildah available
 
 How it works
@@ -357,18 +357,19 @@ How it works
 
 The buildah method uses a different approach:
 
-1. **Creates a working container** from the base image using ``buildah from``
+1. **Creates a working container** from the base image (even scratch) using ``buildah from``
 2. **Mounts the container filesystem** to a directory on the host
 3. **Runs DNF on the host** with ``--installroot`` pointing to the mount
-4. **Commits the result** to a final image
+4. **DNF bootstraps** the container with only the specified packages and dependencies
+5. **Commits the result** to a final image
 
-This means DNF never runs inside the container, so the base image doesn't need
-it.
+This means DNF never runs inside the container and can bootstrap a complete
+filesystem from scratch.
 
-Example: Minimal fedora-minimal image
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Example: Truly minimal scratch-based image
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Create a configuration using fedora-minimal:
+Create a configuration building from scratch:
 
 .. code-block:: yaml
 
@@ -384,11 +385,14 @@ Create a configuration using fedora-minimal:
    install:
      type: container
      build_method: buildah
-     base_image: registry.fedoraproject.org/fedora-minimal:40
+     base_image: scratch
      tag: myapp:minimal-v1.0
      releasever: "40"
+     install_weak_deps: false  # Exclude weak dependencies
      packages:
        - myapp
+       - bash              # Minimal shell
+       - coreutils-single  # Basic utilities
 
 Build the image:
 
@@ -399,6 +403,10 @@ Build the image:
 The ``releasever`` field is required for the buildah method to tell DNF which
 Fedora release to use when resolving dependencies.
 
+Setting ``install_weak_deps: false`` excludes recommended-but-not-required
+packages (weak dependencies), further reducing image size. This is similar to
+using ``--no-install-recommends`` in other package managers.
+
 Size comparison
 ~~~~~~~~~~~~~~~
 
@@ -407,13 +415,17 @@ Compare image sizes between methods:
 .. code-block:: bash
 
    # Standard containerfile method with fedora base
-   # Base: ~180 MB, Final: ~220 MB
+   # Base: ~190 MB, Final: ~830 MB (with dependencies)
 
-   # Buildah method with fedora-minimal base
-   # Base: ~110 MB, Final: ~120 MB
+   # Buildah method with scratch base
+   # Base: 0 MB, Final: ~650 MB (only what's needed)
 
-The buildah method with fedora-minimal can save 50-100 MB depending on your
-packages.
+The buildah method with scratch eliminates all base OS overhead, including
+over 100 packages you don't need. The final image contains only:
+
+* Your application packages
+* Their runtime dependencies
+* Minimal utilities you explicitly specify
 
 Requirements
 ~~~~~~~~~~~~
@@ -440,9 +452,15 @@ After building, verify the image:
    # Check image size
    podman images myapp:minimal-v1.0
 
-   # Verify DNF is not in the image
+   # Count installed packages
+   podman run myapp:minimal-v1.0 rpm -qa | wc -l
+
+   # Verify only specified packages are present
+   podman run myapp:minimal-v1.0 rpm -qa | grep -E 'myapp|bash|coreutils'
+
+   # Verify no base OS packages
    podman run myapp:minimal-v1.0 which dnf
-   # Should fail with "which: no dnf in ..."
+   # Should fail - dnf is not installed
 
    # Test your application
    podman run myapp:minimal-v1.0 /usr/bin/myapp --version

@@ -289,6 +289,9 @@ container
    * - releasever
      - No
      - Release version for DNF (buildah method only). Example: ``"40"``. If not specified, DNF will attempt to detect from base image.
+   * - install_weak_deps
+     - No
+     - Whether to install weak dependencies (buildah method only). Default: ``true``. Set to ``false`` for minimal images.
    * - registry
      - No
      - Registry to push to
@@ -363,7 +366,7 @@ Container image
        - nginx
        - webapp
 
-Container with buildah (minimal image)
+Container with buildah (scratch-based)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: yaml
@@ -379,11 +382,14 @@ Container with buildah (minimal image)
    install:
      type: container
      build_method: buildah
-     base_image: registry.fedoraproject.org/fedora-minimal:40
+     base_image: scratch
      tag: company/myapp:minimal
      releasever: "40"
+     install_weak_deps: false  # Exclude weak dependencies
      packages:
        - myapp
+       - bash              # For container shell
+       - coreutils-single  # Basic utilities
 
 Best practices
 --------------

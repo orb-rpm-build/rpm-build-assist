@@ -106,8 +106,8 @@ install:
 #     - webapp
 
 # ---
-# # Example: Minimal container with buildah method
-# # Produces smaller images by using fedora-minimal base without DNF
+# # Example: Minimal container with buildah method from scratch
+# # Produces truly minimal images with only specified packages
 # base: fedora-40-x86_64
 #
 # build:
@@ -118,19 +118,23 @@ install:
 #
 # install:
 #   type: container
-#   # Use buildah method for minimal images
+#   # Use buildah method to bootstrap from scratch
 #   build_method: buildah
-#   # Minimal base image (no DNF required)
-#   base_image: registry.fedoraproject.org/fedora-minimal:40
+#   # Start from empty scratch image
+#   base_image: scratch
 #   # Tag for the resulting image
 #   tag: myapp:minimal
 #   # Release version for DNF (required for buildah method)
 #   releasever: "40"
+#   # Exclude weak dependencies for minimal size
+#   install_weak_deps: false
 #   # Optional: Registry to push to
 #   # registry: quay.io/myorg
-#   # Packages to install
+#   # Packages to install (only what you need)
 #   packages:
 #     - webapp
+#     - bash              # Minimal shell
+#     - coreutils-single  # Basic utilities
 
 # ---
 # # Example: Simple build without installation

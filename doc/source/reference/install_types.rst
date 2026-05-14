@@ -213,11 +213,12 @@ The container install type supports two build methods:
 **buildah**
   Uses buildah mount + dnf --installroot. Runs DNF on the host, installing into the mounted container filesystem.
 
-  * Base image does not need DNF
+  * Base image does not need DNF (or anything at all)
+  * Can bootstrap from completely empty scratch image
   * No intermediate DNF layers
-  * Results in smaller final images
+  * Results in minimal final images containing only specified packages
   * Requires buildah installed
-  * Ideal for minimal base images (fedora-minimal, scratch-based)
+  * Ideal for production images (scratch, fedora-minimal)
 
 **Comparison**:
 
@@ -230,32 +231,35 @@ The container install type supports two build methods:
      - buildah
    * - Base image requirements
      - Must include DNF
-     - No DNF needed
+     - No requirements (can use scratch)
    * - Build speed
      - DNF runs in container
      - DNF runs on host
    * - Image size
-     - Larger (includes DNF)
-     - Smaller (no DNF)
+     - Larger (includes base OS)
+     - Minimal (only specified packages)
    * - Dependencies
      - podman or docker
      - buildah
    * - Use case
      - General purpose
-     - Minimal production images
+     - Production, truly minimal images
 
-**Example with buildah**:
+**Example with buildah (scratch-based)**:
 
 .. code-block:: yaml
 
    install:
      type: container
      build_method: buildah
-     base_image: registry.fedoraproject.org/fedora-minimal:40
+     base_image: scratch
      tag: myapp:minimal
-     releasever: "40"  # Required for buildah method
+     releasever: "40"
+     install_weak_deps: false  # Exclude weak dependencies
      packages:
        - myapp
+       - bash              # For container shell
+       - coreutils-single  # Basic utilities
 
 **Post-build**: Container image built and optionally pushed to registry
 

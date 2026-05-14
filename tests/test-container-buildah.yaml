@@ -1,5 +1,5 @@
-# Test: Container build using buildah method with fedora-minimal base
-# Validates that buildah can install packages into minimal base images without DNF
+# Test: Container build using buildah method with scratch base
+# Validates that buildah can bootstrap packages into an empty container from scratch
 
 base: fedora-44-x86_64
 
@@ -12,8 +12,10 @@ build:
 install:
   type: container
   build_method: buildah
-  base_image: registry.fedoraproject.org/fedora-minimal:44
+  base_image: scratch
   tag: rpm-build-assist:buildah-test
   releasever: "44"
   packages:
     - rpm-build-assist
+    - bash  # Minimal shell for CMD
+    - coreutils-single  # Basic utilities

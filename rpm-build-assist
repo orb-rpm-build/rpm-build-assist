@@ -721,6 +721,7 @@ CMD ["/bin/bash"]
         image_tag = config['tag']
         registry = config.get('registry')
         releasever = config.get('releasever')
+        install_weak_deps = config.get('install_weak_deps', True)
 
         self.logger.debug(f"Using buildah mount + dnf --installroot method")
 
@@ -734,11 +735,9 @@ CMD ["/bin/bash"]
             # Mount container filesystem
             mount_point = self._buildah_mount(container_id)
 
-            # Create repo file inside the mounted container
-            repo_file = self._create_buildah_repo_config(mount_point)
-
             # Install packages using dnf --installroot
-            self._dnf_install_to_buildah(mount_point, packages, releasever)
+            # DNF runs on the host and uses host's repo configs
+            self._dnf_install_to_buildah(mount_point, packages, releasever, install_weak_deps)
 
             # Clean up DNF cache to minimize image size
             self._cleanup_buildah_dnf_cache(mount_point)
@@ -856,17 +855,23 @@ CMD ["/bin/bash"]
                 self.logger.error(f"Error output: {e.stderr}")
             sys.exit(1)
 
-    def _create_buildah_repo_config(self, mount_point: str) -> str:
+    def _dnf_install_to_buildah(self, mount_point: str, packages: List[str],
+                                releasever: Optional[str], install_weak_deps: bool = True) -> None:
         """
-        Create a yum repository configuration file inside the mounted container.
+        Install packages using dnf --installroot into the mounted container.
+
+        DNF runs on the host and uses the host's repository configuration.
+        The local build repository is added via --repofrompath.
 
         Args:
             mount_point: Path where container is mounted
-
-        Returns:
-            Path to the created repo file
+            packages: List of package names to install
+            releasever: Release version for DNF (optional)
+            install_weak_deps: Whether to install weak dependencies (default: True)
         """
-        # Find the actual repository with RPMs (mock creates results/{config}/ subdirectory)
+        self.logger.info(f"Installing packages to {mount_point}...")
+
+        # Find the actual repository with RPMs
         base_config = self.config.get('base')
         repo_path = self.localrepo_path / 'results' / base_config
 
@@ -875,42 +880,11 @@ CMD ["/bin/bash"]
             self.logger.error("Ensure packages were built successfully before container installation")
             sys.exit(1)
 
-        # Create /etc/yum.repos.d inside the container if it doesn't exist
-        repos_dir = Path(mount_point) / 'etc' / 'yum.repos.d'
-        repos_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create repo file inside the container
-        repo_file_path = repos_dir / 'local-builds.repo'
-        repo_content = f"""[local-builds]
-name=Local Built Packages
-baseurl=file://{repo_path}
-enabled=1
-gpgcheck=0
-priority=1
-"""
-
-        with open(repo_file_path, 'w') as f:
-            f.write(repo_content)
-
-        self.logger.debug(f"Created repo file: {repo_file_path}")
-        return str(repo_file_path)
-
-    def _dnf_install_to_buildah(self, mount_point: str, packages: List[str],
-                                releasever: Optional[str]) -> None:
-        """
-        Install packages using dnf --installroot into the mounted container.
-
-        Args:
-            mount_point: Path where container is mounted
-            packages: List of package names to install
-            releasever: Release version for DNF (optional)
-        """
-        self.logger.info(f"Installing packages to {mount_point}...")
-
         # Build dnf command
         dnf_cmd = [
             'dnf', 'install',
             f'--installroot={mount_point}',
+            '--use-host-config',  # Use host's repo configuration
             '--nogpgcheck',
             '-y',
         ]
@@ -918,6 +892,14 @@ priority=1
         # Add releasever if specified
         if releasever:
             dnf_cmd.append(f'--releasever={releasever}')
+
+        # Disable weak dependencies if requested (for minimal images)
+        if not install_weak_deps:
+            dnf_cmd.append('--setopt=install_weak_deps=false')
+
+        # Add local repository via --repofrompath
+        # This makes DNF use host's repos for dependencies and our local repo for built packages
+        dnf_cmd.extend(['--repofrompath', f'local-builds,{repo_path}'])
 
         # Add additional repositories if configured
         for repo_url in self.addrepo_urls:

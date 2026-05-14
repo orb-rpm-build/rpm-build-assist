@@ -1,0 +1,20 @@
+# Test: Build Fedora nginx package and create scratch-based container
+# Validates buildah method with a real-world package from Fedora dist-git
+
+base: fedora-44-x86_64
+
+build:
+  - type: dist-git
+    url: https://src.fedoraproject.org/rpms/
+    packages:
+      - nginx:f44
+
+install:
+  type: container
+  build_method: buildah
+  base_image: scratch
+  tag: localhost/nginx:minimal
+  releasever: "44"
+  install_weak_deps: false  # Exclude weak dependencies for minimal image
+  packages:
+    - nginx
