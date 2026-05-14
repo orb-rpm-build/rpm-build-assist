@@ -327,6 +327,126 @@ rpm-build-assist to build the RPMs:
 
       podman build -t myapp:custom .
 
+Building Minimal Container Images
+----------------------------------
+
+For production deployments, you may want to minimize container image size by
+using minimal base images that don't include DNF or other build tools. The
+``buildah`` build method enables this by installing packages from the host
+instead of inside the container.
+
+When to use buildah
+~~~~~~~~~~~~~~~~~~~
+
+Use the buildah build method when:
+
+* You want the smallest possible image size
+* Using minimal base images (fedora-minimal, alpine-based, scratch-based)
+* Building production images where every megabyte counts
+* The base image doesn't include a package manager
+
+Use the default containerfile method when:
+
+* You want simplicity and compatibility
+* Using standard base images (fedora, ubi, etc.)
+* The base image already includes DNF
+* You don't have buildah available
+
+How it works
+~~~~~~~~~~~~
+
+The buildah method uses a different approach:
+
+1. **Creates a working container** from the base image using ``buildah from``
+2. **Mounts the container filesystem** to a directory on the host
+3. **Runs DNF on the host** with ``--installroot`` pointing to the mount
+4. **Commits the result** to a final image
+
+This means DNF never runs inside the container, so the base image doesn't need
+it.
+
+Example: Minimal fedora-minimal image
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Create a configuration using fedora-minimal:
+
+.. code-block:: yaml
+
+   # minimal-container.yaml
+   base: fedora-40-x86_64
+
+   build:
+     - type: git
+       url: https://github.com/myorg/
+       packages:
+         - myapp:v1.0
+
+   install:
+     type: container
+     build_method: buildah
+     base_image: registry.fedoraproject.org/fedora-minimal:40
+     tag: myapp:minimal-v1.0
+     releasever: "40"
+     packages:
+       - myapp
+
+Build the image:
+
+.. code-block:: bash
+
+   ./rpm-build-assist -c minimal-container.yaml
+
+The ``releasever`` field is required for the buildah method to tell DNF which
+Fedora release to use when resolving dependencies.
+
+Size comparison
+~~~~~~~~~~~~~~~
+
+Compare image sizes between methods:
+
+.. code-block:: bash
+
+   # Standard containerfile method with fedora base
+   # Base: ~180 MB, Final: ~220 MB
+
+   # Buildah method with fedora-minimal base
+   # Base: ~110 MB, Final: ~120 MB
+
+The buildah method with fedora-minimal can save 50-100 MB depending on your
+packages.
+
+Requirements
+~~~~~~~~~~~~
+
+The buildah method requires:
+
+* buildah installed on your build system
+* SELinux contexts properly configured (buildah handles this automatically)
+* Sufficient permissions to mount filesystems
+
+Install buildah:
+
+.. code-block:: bash
+
+   sudo dnf install buildah
+
+Verification
+~~~~~~~~~~~~
+
+After building, verify the image:
+
+.. code-block:: bash
+
+   # Check image size
+   podman images myapp:minimal-v1.0
+
+   # Verify DNF is not in the image
+   podman run myapp:minimal-v1.0 which dnf
+   # Should fail with "which: no dnf in ..."
+
+   # Test your application
+   podman run myapp:minimal-v1.0 /usr/bin/myapp --version
+
 Best practices
 --------------
 

@@ -277,12 +277,18 @@ container
    * - type
      - Yes
      - Must be ``container``
+   * - build_method
+     - No
+     - Build method: ``containerfile`` (default) or ``buildah``. Use buildah for minimal base images.
    * - base_image
      - Yes
      - Base container image
    * - tag
      - Yes
      - Tag for resulting image
+   * - releasever
+     - No
+     - Release version for DNF (buildah method only). Example: ``"40"``. If not specified, DNF will attempt to detect from base image.
    * - registry
      - No
      - Registry to push to
@@ -356,6 +362,28 @@ Container image
      packages:
        - nginx
        - webapp
+
+Container with buildah (minimal image)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: yaml
+
+   base: fedora-40-x86_64
+
+   build:
+     - type: git
+       url: https://github.com/company/
+       packages:
+         - myapp:main
+
+   install:
+     type: container
+     build_method: buildah
+     base_image: registry.fedoraproject.org/fedora-minimal:40
+     tag: company/myapp:minimal
+     releasever: "40"
+     packages:
+       - myapp
 
 Best practices
 --------------

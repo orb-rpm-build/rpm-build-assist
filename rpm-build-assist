@@ -424,6 +424,8 @@ class MockBuildAssistant:
             config: Install configuration with:
                 - base_image: Base container image to use
                 - tag: Tag for the resulting image
+                - build_method: (optional) "containerfile" (default) or "buildah"
+                - releasever: (optional) Release version for DNF (buildah only)
                 - registry: (optional) Registry to push to
             packages: List of package names to install
         """
@@ -438,11 +440,39 @@ class MockBuildAssistant:
             self.logger.error("Container install type requires 'tag' field")
             sys.exit(1)
 
-        registry = config.get('registry')
+        # Get build method (default to containerfile for backward compatibility)
+        build_method = config.get('build_method', 'containerfile')
+
+        if build_method not in ['containerfile', 'buildah']:
+            self.logger.error(f"Invalid build_method '{build_method}'. Must be 'containerfile' or 'buildah'")
+            sys.exit(1)
 
         self.logger.info(f"Building container image: {image_tag}")
         self.logger.info(f"Base image: {base_image}")
+        self.logger.info(f"Build method: {build_method}")
         self.logger.info(f"Installing packages: {', '.join(packages)}")
+
+        # Branch based on build method
+        if build_method == 'buildah':
+            self._install_to_container_buildah(config, packages)
+        else:
+            self._install_to_container_containerfile(config, packages)
+
+    def _install_to_container_containerfile(self, config: Dict, packages: List[str]) -> None:
+        """
+        Install packages to a container image using Containerfile build.
+
+        This is the traditional method that runs DNF inside the container.
+
+        Args:
+            config: Install configuration
+            packages: List of package names to install
+        """
+        base_image = config['base_image']
+        image_tag = config['tag']
+        registry = config.get('registry')
+
+        self.logger.debug(f"Using Containerfile build method")
 
         # Detect container runtime (prefer podman, fall back to docker)
         container_runtime = self._detect_container_runtime()
@@ -457,8 +487,10 @@ class MockBuildAssistant:
             self.logger.error("Ensure packages were built successfully before container installation")
             sys.exit(1)
 
-        # Create a temporary directory for the build context
-        with tempfile.TemporaryDirectory(prefix='rpm-build-container-') as build_dir:
+        # Create a temporary directory for the build context in the same parent as localrepo
+        # This ensures they're on the same filesystem so hard links work
+        temp_parent = self.localrepo_path.parent
+        with tempfile.TemporaryDirectory(prefix='rpm-build-container-', dir=temp_parent) as build_dir:
             build_path = Path(build_dir)
 
             # Copy repository to build context for bind mount
@@ -467,7 +499,7 @@ class MockBuildAssistant:
 
             self.logger.info(f"Copying repository to build context...")
 
-            # Copy the entire repository directory
+            # Copy the entire repository directory using hard links for efficiency
             # This preserves the exact structure that mock creates
             shutil.copytree(repo_source, localrepo_copy, copy_function=os.link)
 
@@ -626,7 +658,7 @@ CMD ["/bin/bash"]
         Push the container image to a registry.
 
         Args:
-            runtime: Container runtime to use ('podman' or 'docker')
+            runtime: Container runtime to use ('podman', 'docker', or 'buildah')
             tag: Image tag
             registry: Registry to push to
         """
@@ -674,6 +706,332 @@ CMD ["/bin/bash"]
             if hasattr(e, 'stderr') and e.stderr:
                 self.logger.error(f"Push error output: {e.stderr}")
             sys.exit(1)
+
+    def _install_to_container_buildah(self, config: Dict, packages: List[str]) -> None:
+        """
+        Install packages to a container image using buildah mount + dnf --installroot.
+
+        This method creates minimal container images without requiring DNF in the base image.
+
+        Args:
+            config: Install configuration
+            packages: List of package names to install
+        """
+        base_image = config['base_image']
+        image_tag = config['tag']
+        registry = config.get('registry')
+        releasever = config.get('releasever')
+
+        self.logger.debug(f"Using buildah mount + dnf --installroot method")
+
+        # Check buildah is available
+        self._check_buildah_available()
+
+        # Create working container from base image
+        container_id = self._buildah_from(base_image)
+
+        try:
+            # Mount container filesystem
+            mount_point = self._buildah_mount(container_id)
+
+            # Create repo file inside the mounted container
+            repo_file = self._create_buildah_repo_config(mount_point)
+
+            # Install packages using dnf --installroot
+            self._dnf_install_to_buildah(mount_point, packages, releasever)
+
+            # Clean up DNF cache to minimize image size
+            self._cleanup_buildah_dnf_cache(mount_point)
+
+            # Unmount container
+            self._buildah_unmount(container_id)
+
+            # Commit to final image
+            self._buildah_commit(container_id, image_tag)
+
+            # Push to registry if specified
+            if registry:
+                self._push_container_image('buildah', image_tag, registry)
+
+        except Exception as e:
+            # Clean up on error
+            try:
+                self._buildah_rm(container_id)
+            except:
+                pass
+            raise
+
+        finally:
+            # Clean up working container
+            try:
+                self._buildah_rm(container_id)
+            except subprocess.CalledProcessError:
+                # Container may already be removed or not exist
+                pass
+
+        self.logger.info(f"Successfully created container image: {image_tag}")
+        if registry:
+            full_image_name = f"{registry}/{image_tag}"
+            self.logger.info(f"Pushed to registry: {full_image_name}")
+
+    def _check_buildah_available(self) -> None:
+        """
+        Check if buildah is available.
+
+        Raises:
+            SystemExit if buildah is not installed
+        """
+        try:
+            result = subprocess.run(
+                ['buildah', '--version'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                raise FileNotFoundError
+            self.logger.debug(f"buildah version: {result.stdout.strip()}")
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            self.logger.error("buildah not found. Install buildah to use build_method: buildah")
+            self.logger.error("On Fedora: sudo dnf install buildah")
+            sys.exit(1)
+
+    def _buildah_from(self, base_image: str) -> str:
+        """
+        Create a working container from a base image.
+
+        Args:
+            base_image: Base container image to use
+
+        Returns:
+            Container ID
+        """
+        self.logger.info(f"Creating working container from {base_image}...")
+
+        cmd = ['buildah', 'from', base_image]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            container_id = result.stdout.strip()
+            self.logger.debug(f"Created container: {container_id}")
+            return container_id
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Failed to create container from {base_image}: {e}")
+            if e.stderr:
+                self.logger.error(f"Error output: {e.stderr}")
+            sys.exit(1)
+
+    def _buildah_mount(self, container_id: str) -> str:
+        """
+        Mount a container's filesystem.
+
+        Args:
+            container_id: Container ID to mount
+
+        Returns:
+            Mount point path
+        """
+        self.logger.debug(f"Mounting container {container_id}...")
+
+        cmd = ['buildah', 'mount', container_id]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            mount_point = result.stdout.strip()
+            self.logger.debug(f"Mounted at: {mount_point}")
+            return mount_point
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Failed to mount container: {e}")
+            if e.stderr:
+                self.logger.error(f"Error output: {e.stderr}")
+            sys.exit(1)
+
+    def _create_buildah_repo_config(self, mount_point: str) -> str:
+        """
+        Create a yum repository configuration file inside the mounted container.
+
+        Args:
+            mount_point: Path where container is mounted
+
+        Returns:
+            Path to the created repo file
+        """
+        # Find the actual repository with RPMs (mock creates results/{config}/ subdirectory)
+        base_config = self.config.get('base')
+        repo_path = self.localrepo_path / 'results' / base_config
+
+        if not repo_path.exists():
+            self.logger.error(f"Repository not found at {repo_path}")
+            self.logger.error("Ensure packages were built successfully before container installation")
+            sys.exit(1)
+
+        # Create /etc/yum.repos.d inside the container if it doesn't exist
+        repos_dir = Path(mount_point) / 'etc' / 'yum.repos.d'
+        repos_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create repo file inside the container
+        repo_file_path = repos_dir / 'local-builds.repo'
+        repo_content = f"""[local-builds]
+name=Local Built Packages
+baseurl=file://{repo_path}
+enabled=1
+gpgcheck=0
+priority=1
+"""
+
+        with open(repo_file_path, 'w') as f:
+            f.write(repo_content)
+
+        self.logger.debug(f"Created repo file: {repo_file_path}")
+        return str(repo_file_path)
+
+    def _dnf_install_to_buildah(self, mount_point: str, packages: List[str],
+                                releasever: Optional[str]) -> None:
+        """
+        Install packages using dnf --installroot into the mounted container.
+
+        Args:
+            mount_point: Path where container is mounted
+            packages: List of package names to install
+            releasever: Release version for DNF (optional)
+        """
+        self.logger.info(f"Installing packages to {mount_point}...")
+
+        # Build dnf command
+        dnf_cmd = [
+            'dnf', 'install',
+            f'--installroot={mount_point}',
+            '--nogpgcheck',
+            '-y',
+        ]
+
+        # Add releasever if specified
+        if releasever:
+            dnf_cmd.append(f'--releasever={releasever}')
+
+        # Add additional repositories if configured
+        for repo_url in self.addrepo_urls:
+            dnf_cmd.extend(['--repofrompath', f'addrepo,{repo_url}'])
+
+        # Add packages
+        dnf_cmd.extend(packages)
+
+        self.logger.debug(f"DNF command: {' '.join(dnf_cmd)}")
+
+        try:
+            if self.verbose:
+                # Show DNF output in verbose mode
+                subprocess.run(dnf_cmd, check=True)
+            else:
+                # Capture output in normal mode
+                result = subprocess.run(
+                    dnf_cmd,
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+                self.logger.debug(f"DNF output: {result.stdout}")
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Failed to install packages: {e}")
+            if hasattr(e, 'stderr') and e.stderr:
+                self.logger.error(f"DNF error output: {e.stderr}")
+            if not releasever:
+                self.logger.error("Hint: Try specifying 'releasever' in your configuration")
+            sys.exit(1)
+
+    def _cleanup_buildah_dnf_cache(self, mount_point: str) -> None:
+        """
+        Clean up DNF cache in the mounted container to minimize image size.
+
+        Args:
+            mount_point: Path where container is mounted
+        """
+        self.logger.debug(f"Cleaning up DNF cache in {mount_point}...")
+
+        # Remove both DNF4 and DNF5 cache directories
+        cache_dirs = [
+            Path(mount_point) / 'var' / 'cache' / 'dnf',
+            Path(mount_point) / 'var' / 'cache' / 'libdnf5',
+        ]
+
+        for cache_dir in cache_dirs:
+            if cache_dir.exists():
+                size_before = sum(f.stat().st_size for f in cache_dir.rglob('*') if f.is_file())
+                shutil.rmtree(cache_dir)
+                self.logger.debug(f"Removed {cache_dir.name} cache ({size_before / 1024 / 1024:.1f} MB)")
+
+    def _buildah_unmount(self, container_id: str) -> None:
+        """
+        Unmount a container's filesystem.
+
+        Args:
+            container_id: Container ID to unmount
+        """
+        self.logger.debug(f"Unmounting container {container_id}...")
+
+        cmd = ['buildah', 'unmount', container_id]
+
+        try:
+            subprocess.run(cmd, check=True, capture_output=True)
+        except subprocess.CalledProcessError as e:
+            self.logger.warning(f"Failed to unmount container: {e}")
+            # Don't exit - container may already be unmounted
+
+    def _buildah_commit(self, container_id: str, tag: str) -> None:
+        """
+        Commit a working container to a final image.
+
+        Args:
+            container_id: Container ID to commit
+            tag: Image tag for the committed image
+        """
+        self.logger.info(f"Committing container to image {tag}...")
+
+        cmd = ['buildah', 'commit', container_id, tag]
+
+        try:
+            if self.verbose:
+                subprocess.run(cmd, check=True)
+            else:
+                result = subprocess.run(
+                    cmd,
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+                self.logger.debug(f"Commit output: {result.stdout}")
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Failed to commit container: {e}")
+            if hasattr(e, 'stderr') and e.stderr:
+                self.logger.error(f"Error output: {e.stderr}")
+            sys.exit(1)
+
+    def _buildah_rm(self, container_id: str) -> None:
+        """
+        Remove a working container.
+
+        Args:
+            container_id: Container ID to remove
+        """
+        self.logger.debug(f"Removing working container {container_id}...")
+
+        cmd = ['buildah', 'rm', container_id]
+
+        try:
+            subprocess.run(cmd, check=True, capture_output=True)
+        except subprocess.CalledProcessError as e:
+            # Don't log error - container may already be removed
+            pass
 
     def _install_to_flatpak(self, config: Dict, packages: List[str]) -> None:
         """Install packages to a flatpak"""

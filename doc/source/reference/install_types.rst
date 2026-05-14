@@ -197,25 +197,93 @@ container
        - myapp
        - nginx
 
+Build Methods
+~~~~~~~~~~~~~
+
+The container install type supports two build methods:
+
+**containerfile** (default)
+  Traditional Containerfile-based build. Runs DNF inside the container during build.
+
+  * Base image must include DNF
+  * Creates intermediate layers with DNF cache
+  * Works with podman or docker
+  * General-purpose, works with any base image
+
+**buildah**
+  Uses buildah mount + dnf --installroot. Runs DNF on the host, installing into the mounted container filesystem.
+
+  * Base image does not need DNF
+  * No intermediate DNF layers
+  * Results in smaller final images
+  * Requires buildah installed
+  * Ideal for minimal base images (fedora-minimal, scratch-based)
+
+**Comparison**:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 40 40
+
+   * - Aspect
+     - containerfile
+     - buildah
+   * - Base image requirements
+     - Must include DNF
+     - No DNF needed
+   * - Build speed
+     - DNF runs in container
+     - DNF runs on host
+   * - Image size
+     - Larger (includes DNF)
+     - Smaller (no DNF)
+   * - Dependencies
+     - podman or docker
+     - buildah
+   * - Use case
+     - General purpose
+     - Minimal production images
+
+**Example with buildah**:
+
+.. code-block:: yaml
+
+   install:
+     type: container
+     build_method: buildah
+     base_image: registry.fedoraproject.org/fedora-minimal:40
+     tag: myapp:minimal
+     releasever: "40"  # Required for buildah method
+     packages:
+       - myapp
+
 **Post-build**: Container image built and optionally pushed to registry
 
-**Process**:
+**Process (containerfile method)**:
 
 1. Copies local RPM repository to build context
-2. Generates Containerfile:
+2. Generates Containerfile with bind mount:
 
    .. code-block:: dockerfile
 
       FROM {base_image}
-      COPY localrepo /tmp/localrepo
-      RUN echo '[localrepo]...' > /etc/yum.repos.d/localrepo.repo
-      RUN dnf install -y {packages} && dnf clean all && rm -rf ...
+      RUN --mount=type=bind,source=localrepo,target=/tmp/localrepo ...
+      RUN dnf install -y {packages} && dnf clean all
 
 3. Builds image with podman or docker
 4. Tags as specified
 5. Pushes to registry if specified
 
-**Container runtime**: Automatically detects podman or docker
+**Process (buildah method)**:
+
+1. Creates working container from base image (``buildah from``)
+2. Mounts container filesystem (``buildah mount``)
+3. Runs ``dnf install --installroot=<mountpoint>`` from host
+4. Unmounts container (``buildah unmount``)
+5. Commits to final image (``buildah commit``)
+6. Pushes to registry if specified
+
+**Container runtime**: Automatically detects podman, docker, or buildah
 
 **Use cases**:
 
@@ -225,7 +293,8 @@ container
 
 **Requirements**:
 
-* podman or docker installed
+* containerfile method: podman or docker installed
+* buildah method: buildah installed
 * For registry push: authenticated to registry
 
 **Example Containerfile** (generated):
