@@ -722,6 +722,7 @@ CMD ["/bin/bash"]
         registry = config.get('registry')
         releasever = config.get('releasever')
         install_weak_deps = config.get('install_weak_deps', True)
+        install_docs = config.get('install_docs', True)
 
         self.logger.debug(f"Using buildah mount + dnf --installroot method")
 
@@ -737,7 +738,7 @@ CMD ["/bin/bash"]
 
             # Install packages using dnf --installroot
             # DNF runs on the host and uses host's repo configs
-            self._dnf_install_to_buildah(mount_point, packages, releasever, install_weak_deps)
+            self._dnf_install_to_buildah(mount_point, packages, releasever, install_weak_deps, install_docs)
 
             # Clean up DNF cache to minimize image size
             self._cleanup_buildah_dnf_cache(mount_point)
@@ -856,7 +857,8 @@ CMD ["/bin/bash"]
             sys.exit(1)
 
     def _dnf_install_to_buildah(self, mount_point: str, packages: List[str],
-                                releasever: Optional[str], install_weak_deps: bool = True) -> None:
+                                releasever: Optional[str], install_weak_deps: bool = True,
+                                install_docs: bool = True) -> None:
         """
         Install packages using dnf --installroot into the mounted container.
 
@@ -868,6 +870,7 @@ CMD ["/bin/bash"]
             packages: List of package names to install
             releasever: Release version for DNF (optional)
             install_weak_deps: Whether to install weak dependencies (default: True)
+            install_docs: Whether to install documentation (default: True)
         """
         self.logger.info(f"Installing packages to {mount_point}...")
 
@@ -896,6 +899,10 @@ CMD ["/bin/bash"]
         # Disable weak dependencies if requested (for minimal images)
         if not install_weak_deps:
             dnf_cmd.append('--setopt=install_weak_deps=false')
+
+        # Skip documentation if requested (for minimal images)
+        if not install_docs:
+            dnf_cmd.append('--setopt=tsflags=nodocs')
 
         # Add local repository via --repofrompath
         # This makes DNF use host's repos for dependencies and our local repo for built packages

@@ -292,6 +292,9 @@ container
    * - install_weak_deps
      - No
      - Whether to install weak dependencies (buildah method only). Default: ``true``. Set to ``false`` for minimal images.
+   * - install_docs
+     - No
+     - Whether to install documentation (buildah method only). Default: ``true``. Set to ``false`` for minimal images.
    * - registry
      - No
      - Registry to push to
@@ -386,6 +389,7 @@ Container with buildah (scratch-based)
      tag: company/myapp:minimal
      releasever: "40"
      install_weak_deps: false  # Exclude weak dependencies
+     install_docs: false       # Exclude documentation
      packages:
        - myapp
        - bash              # For container shell

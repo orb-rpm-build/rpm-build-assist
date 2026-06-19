@@ -15,6 +15,8 @@ install:
   base_image: scratch
   tag: rpm-build-assist:buildah-test
   releasever: "44"
+  install_weak_deps: false
+  install_docs: false
   packages:
     - rpm-build-assist
     - bash  # Minimal shell for CMD

@@ -128,6 +128,8 @@ install:
 #   releasever: "40"
 #   # Exclude weak dependencies for minimal size
 #   install_weak_deps: false
+#   # Exclude documentation for minimal size
+#   install_docs: false
 #   # Optional: Registry to push to
 #   # registry: quay.io/myorg
 #   # Packages to install (only what you need)
