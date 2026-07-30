@@ -280,6 +280,11 @@ class MockBuildAssistant:
 
         self.logger.debug(f"Repository URL: {repo_url}")
 
+        # Clear the srpm directory to avoid ambiguity from previous builds
+        srpm_dir = Path(f'{self.localrepo_path}/srpm')
+        if srpm_dir.exists():
+            shutil.rmtree(srpm_dir)
+
         # Build mock command
         mock_cmd = [
             'mock',
@@ -339,8 +344,15 @@ class MockBuildAssistant:
         ]
 
         # Find the src.rpm file
-        print(f'globbing: {self.localrepo_path}/srpm/{package}*.src.rpm')
-        src_rpm = glob.glob(f'{self.localrepo_path}/srpm/{package}*.src.rpm')[0]
+        srpm_dir = f'{self.localrepo_path}/srpm'
+        matches = glob.glob(f'{srpm_dir}/{package}*.src.rpm')
+        if not matches:
+            self.logger.error(f"No src.rpm found for {package} in {srpm_dir}")
+            sys.exit(1)
+        if len(matches) > 1:
+            self.logger.error(f"Multiple src.rpm files found for {package} in {srpm_dir}: {matches}")
+            sys.exit(1)
+        src_rpm = matches[0]
 
         # Add localrepo and chain options
         if self.localrepo_path:
