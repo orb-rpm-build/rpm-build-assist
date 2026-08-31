@@ -162,6 +162,30 @@ class MockBuildAssistant:
             f'_mandir {scl_prefix}/share/man',
             f'scl {collection}',
         ]
+        # systemd path macros
+        scl_macros += [
+            f'_systemd_util_dir {scl_prefix}/lib/systemd',
+            f'_unitdir {scl_prefix}/lib/systemd/system',
+            f'_userunitdir {scl_prefix}/lib/systemd/user',
+            f'_presetdir {scl_prefix}/lib/systemd/system-preset',
+            f'_userpresetdir {scl_prefix}/lib/systemd/user-preset',
+            f'_udevhwdbdir {scl_prefix}/lib/udev/hwdb.d',
+            f'_udevrulesdir {scl_prefix}/lib/udev/rules.d',
+            f'_journalcatalogdir {scl_prefix}/lib/systemd/catalog',
+            f'_kernel_install_dir {scl_prefix}/lib/kernel/install.d',
+            f'_binfmtdir {scl_prefix}/lib/binfmt.d',
+            f'_sysctldir {scl_prefix}/lib/sysctl.d',
+            f'_sysusersdir {scl_prefix}/lib/sysusers.d',
+            f'_tmpfilesdir {scl_prefix}/lib/tmpfiles.d',
+            f'_user_tmpfilesdir {scl_prefix}/share/user-tmpfiles.d',
+            f'_environmentdir {scl_prefix}/lib/environment.d',
+            f'_modulesloaddir {scl_prefix}/lib/modules-load.d',
+            f'_modprobedir {scl_prefix}/lib/modprobe.d',
+            f'_systemdgeneratordir {scl_prefix}/lib/systemd/system-generators',
+            f'_systemdusergeneratordir {scl_prefix}/lib/systemd/user-generators',
+            f'_systemd_system_env_generator_dir {scl_prefix}/lib/systemd/system-environment-generators',
+            f'_systemd_user_env_generator_dir {scl_prefix}/lib/systemd/user-environment-generators',
+        ]
 
         for macro in scl_macros:
             self.mock_defines.append(f"--define={macro}")
@@ -188,6 +212,30 @@ class MockBuildAssistant:
             f'_includedir {install_prefix}/include',
             f'_infodir {install_prefix}/share/info',
             f'_mandir {install_prefix}/share/man',
+        ]
+        # systemd path macros
+        collection_macros += [
+            f'_systemd_util_dir {install_prefix}/lib/systemd',
+            f'_unitdir {install_prefix}/lib/systemd/system',
+            f'_userunitdir {install_prefix}/lib/systemd/user',
+            f'_presetdir {install_prefix}/lib/systemd/system-preset',
+            f'_userpresetdir {install_prefix}/lib/systemd/user-preset',
+            f'_udevhwdbdir {install_prefix}/lib/udev/hwdb.d',
+            f'_udevrulesdir {install_prefix}/lib/udev/rules.d',
+            f'_journalcatalogdir {install_prefix}/lib/systemd/catalog',
+            f'_kernel_install_dir {install_prefix}/lib/kernel/install.d',
+            f'_binfmtdir {install_prefix}/lib/binfmt.d',
+            f'_sysctldir {install_prefix}/lib/sysctl.d',
+            f'_sysusersdir {install_prefix}/lib/sysusers.d',
+            f'_tmpfilesdir {install_prefix}/lib/tmpfiles.d',
+            f'_user_tmpfilesdir {install_prefix}/share/user-tmpfiles.d',
+            f'_environmentdir {install_prefix}/lib/environment.d',
+            f'_modulesloaddir {install_prefix}/lib/modules-load.d',
+            f'_modprobedir {install_prefix}/lib/modprobe.d',
+            f'_systemdgeneratordir {install_prefix}/lib/systemd/system-generators',
+            f'_systemdusergeneratordir {install_prefix}/lib/systemd/user-generators',
+            f'_systemd_system_env_generator_dir {install_prefix}/lib/systemd/system-environment-generators',
+            f'_systemd_user_env_generator_dir {install_prefix}/lib/systemd/user-environment-generators',
         ]
 
         # Add build flags for rpath using $ORIGIN and $LIB
