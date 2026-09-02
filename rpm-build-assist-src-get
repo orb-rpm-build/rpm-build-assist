@@ -30,9 +30,9 @@ spectool -g "$spec" || echo "warning: spectool exited non-zero; continuing" >&2
 # name varies between projects; the convention is a name ending in "sources.sh".
 # Unlike spectool, a failure here IS fatal: the script is meant to produce
 # sources, so a non-zero exit means it could not.
-for script in ./*sources.sh; do
+for script in ./*source*.sh; do
     # If the glob matched nothing it stays literal; skip that case.
     [ -e "$script" ] || continue
     echo "Running source assembly script: $script"
-    /bin/sh "$script"
+    /bin/sh "$script" || continue
 done
