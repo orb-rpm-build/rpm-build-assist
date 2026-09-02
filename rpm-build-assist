@@ -318,6 +318,28 @@ class MockBuildAssistant:
                 self.logger.info(f"Building package: {package} (branch: {branch})")
                 self._build_package(base_config, source_type, source_url, package, branch)
 
+    def _resolve_src_get_helper(self) -> str:
+        """
+        Locate the src-get helper script that assembles dist-git sources.
+
+        The helper lives beside this script when running from a git checkout,
+        and under _libexecdir once installed (bindir/../libexec/...).
+        """
+        script_path = Path(__file__).resolve()
+        candidates = [
+            # Running from a git checkout: helper is a sibling of this script
+            script_path.parent / 'rpm-build-assist-src-get',
+            # Installed: _bindir/rpm-build-assist -> _libexecdir/rpm-build-assist/src-get
+            script_path.parent.parent / 'libexec' / 'rpm-build-assist' / 'src-get',
+        ]
+        for candidate in candidates:
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate)
+
+        searched = ', '.join(str(c) for c in candidates)
+        self.logger.error(f"Could not find the src-get helper script (looked in: {searched})")
+        sys.exit(1)
+
     def _build_package(self, base_config: str, source_type: str,
                        source_url: str, package: str, branch: str) -> None:
         """Build a single package using mock"""
@@ -348,10 +370,16 @@ class MockBuildAssistant:
 
         # Add SCM get command based on type
         if source_type == 'dist-git':
+            # Assemble sources with the src-get helper. It fetches online
+            # sources with spectool and then runs any repository-provided
+            # *sources.sh script, all on the host in the checkout directory --
+            # exactly where mock's SCM plugin runs distgit_src_get. When no
+            # such script exists this behaves the same as plain 'spectool -g'.
+            helper = self._resolve_src_get_helper()
             mock_cmd.extend([
                 '--scm-option', 'write_tar=False',
                 '--scm-option', f'distgit_get=git clone --branch {branch} {repo_url} {package}',
-                '--scm-option', f'distgit_src_get=spectool -g {package}.spec',
+                '--scm-option', f'distgit_src_get={helper} {package}.spec',
             ])
         elif source_type == 'git':
             mock_cmd.extend([

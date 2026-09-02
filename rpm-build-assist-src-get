@@ -1,0 +1,38 @@
+#!/bin/sh
+# rpm-build-assist-src-get - assemble dist-git sources for mock's SCM plugin.
+#
+# mock's SCM plugin invokes this as its "distgit_src_get" command, running it
+# on the host in the freshly checked-out package directory. It first fetches
+# any sources that are published online (via spectool), then runs any
+# repository-provided "*sources.sh" script to assemble the sources that are not
+# available for direct download.
+#
+# Missing sources are intentionally NOT diagnosed here: if a source the spec
+# references is still absent afterwards, mock's src.rpm assembly fails and
+# reports exactly which file is missing.
+
+set -eu
+
+spec="${1:-}"
+if [ -z "$spec" ]; then
+    echo "usage: $(basename "$0") SPECFILE" >&2
+    exit 2
+fi
+
+# Fetch sources that are listed with a URL. spectool ignores non-URL (locally
+# assembled) sources and, in current versions, always exits 0 even when a
+# download fails -- so its exit status is not a reliable signal and we do not
+# treat a spectool failure as fatal. A genuinely missing source surfaces later
+# during src.rpm assembly.
+spectool -g "$spec" || echo "warning: spectool exited non-zero; continuing" >&2
+
+# Assemble any remaining sources using a repository-provided script. The exact
+# name varies between projects; the convention is a name ending in "sources.sh".
+# Unlike spectool, a failure here IS fatal: the script is meant to produce
+# sources, so a non-zero exit means it could not.
+for script in ./*sources.sh; do
+    # If the glob matched nothing it stays literal; skip that case.
+    [ -e "$script" ] || continue
+    echo "Running source assembly script: $script"
+    /bin/sh "$script"
+done

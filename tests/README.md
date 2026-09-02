@@ -54,6 +54,15 @@ Validates container image building:
 - Container installation type
 - Container image generation and tagging
 
+### test-src-get-helper.sh
+
+Unit test for the `rpm-build-assist-src-get` helper (run by mock's SCM plugin
+as `distgit_src_get`). Unlike the `.yaml` tests, shell tests end in `.sh`, are
+run directly by the test runner, and do **not** require mock. This one stubs
+`spectool` on `PATH` to verify the helper fetches online sources, runs any
+`*sources.sh` script, tolerates a `spectool` failure, and treats a
+`sources.sh` failure as fatal.
+
 ## Writing New Tests
 
 Create a new YAML file in this directory with `test-` prefix:

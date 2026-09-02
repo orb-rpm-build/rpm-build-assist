@@ -188,6 +188,9 @@ For dist-git repositories:
 * Expects a standard dist-git layout with spec file and sources
 * Uses ``rpkg`` or similar tools internally
 * The ``branch`` corresponds to dist-git branches (e.g., ``rawhide``, ``f39``)
+* Online sources are fetched with ``spectool``; a ``*sources.sh`` script in the
+  repository, if present, is run to assemble the rest. See
+  :doc:`../reference/scm_types` for details.
 
 git
 ~~~

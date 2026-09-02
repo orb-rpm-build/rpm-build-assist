@@ -51,7 +51,7 @@ EOF
 VERBOSE=false
 KEEP_ARTIFACTS=false
 LIST_ONLY=false
-TEST_PATTERN="test-*.yaml"
+TEST_PATTERN="test-*"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -123,6 +123,33 @@ for test_file in "${TEST_FILES[@]}"; do
     if [ ! -f "$test_file" ]; then
         continue
     fi
+
+    # Shell unit tests run directly and do not require mock
+    case "$test_file" in
+        *.sh)
+            test_name=$(basename "$test_file" .sh)
+            echo -n "Running $test_name... "
+            set +e
+            if [ "$VERBOSE" = true ]; then
+                echo
+                bash "$test_file"
+                result=$?
+            else
+                bash "$test_file" > "/tmp/rpm-build-assist-test-$test_name.log" 2>&1
+                result=$?
+            fi
+            set -e
+            if [ $result -eq 0 ]; then
+                echo -e "${GREEN}PASS${NC}"
+                PASSED=$((PASSED + 1))
+            else
+                echo -e "${RED}FAIL${NC}"
+                FAILED=$((FAILED + 1))
+                [ "$VERBOSE" = false ] && echo "  Log: /tmp/rpm-build-assist-test-$test_name.log"
+            fi
+            continue
+            ;;
+    esac
 
     test_name=$(basename "$test_file" .yaml)
 

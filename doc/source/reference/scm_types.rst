@@ -48,18 +48,34 @@ dist-git
    ├── package.spec
    ├── sources
    ├── .gitignore
-   └── (metadata files)
+   ├── (metadata files)
+   └── *sources.sh          # Optional source-assembly script
 
 **Common repositories**:
 
 * Fedora: ``https://src.fedoraproject.org/rpms/``
 * CentOS Stream: ``https://gitlab.com/redhat/centos-stream/rpms/``
 
+**Source handling**:
+
+Sources are assembled during checkout, before the src.rpm is built:
+
+1. Sources listed with a URL are fetched with ``spectool``.
+2. If the repository contains a script whose name ends in ``sources.sh``,
+   it is run to assemble the remaining sources. Some non-Fedora dist-git
+   projects use such a script to generate tarballs (for example from an
+   upstream git tag) instead of a lookaside cache.
+
+Both steps run on the host, in the checkout directory. If a source the spec
+references is still missing afterwards, src.rpm assembly fails and reports the
+missing file. Because these scripts execute during the build, only build from
+dist-git repositories you trust.
+
 **Notes**:
 
 * This is the default type if not specified
 * Works with ``rpkg`` or ``fedpkg`` tooling
-* Sources are downloaded based on ``sources`` file
+* A ``*sources.sh`` script, when present, is executed automatically
 
 git
 ---

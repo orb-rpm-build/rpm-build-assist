@@ -40,9 +40,11 @@ Key features:
 
 %install
 install -D -m 0755 rpm-build-assist %{buildroot}%{_bindir}/rpm-build-assist
+install -D -m 0755 rpm-build-assist-src-get %{buildroot}%{_libexecdir}/rpm-build-assist/src-get
 
 %files
 %{_bindir}/rpm-build-assist
+%{_libexecdir}/rpm-build-assist/
 %doc README.md README-DOCS.md examples/
 
 %changelog
