@@ -1,11 +1,14 @@
 #!/bin/sh
-# rpm-build-assist-src-get - assemble dist-git sources for mock's SCM plugin.
+# rpm-build-assist-src-get - prepare a dist-git checkout for mock's SCM plugin.
 #
 # mock's SCM plugin invokes this as its "distgit_src_get" command, running it
-# on the host in the freshly checked-out package directory. It first fetches
-# any sources that are published online (via spectool), then runs any
-# repository-provided source-assembly script (a name ending in "source.sh" or
-# "sources.sh") to assemble the sources that are not available for download.
+# on the host in the freshly checked-out package directory. It:
+#
+#   1. Expands the rpmautospec %autorelease / %autochangelog macros from the
+#      git history, the way Koji and fedpkg do.
+#   2. Fetches any sources that are published online (via spectool).
+#   3. Runs any repository-provided source-assembly script (a name ending in
+#      "source.sh" or "sources.sh") to assemble sources not available online.
 #
 # Missing sources are intentionally NOT diagnosed here: if a source the spec
 # references is still absent afterwards, mock's src.rpm assembly fails and
@@ -17,6 +20,27 @@ spec="${1:-}"
 if [ -z "$spec" ]; then
     echo "usage: $(basename "$0") SPECFILE" >&2
     exit 2
+fi
+
+# Expand rpmautospec's %autorelease / %autochangelog from the git history.
+# mock's SCM plugin does not run rpmautospec, so without this the rpmautospec
+# macros fall back to release 1 with a placeholder changelog. This runs in the
+# checkout directory, where the .git history rpmautospec reads is present.
+# Specs that don't use rpmautospec are left byte-for-byte untouched.
+if grep -qE '%autorelease|%autochangelog' "$spec"; then
+    if command -v rpmautospec >/dev/null 2>&1; then
+        processed="$spec.rpmautospec"
+        if rpmautospec process-distgit "$spec" "$processed"; then
+            mv -f "$processed" "$spec"
+        else
+            rm -f "$processed"
+            echo "warning: rpmautospec failed for $spec; release and" \
+                 "changelog may be wrong" >&2
+        fi
+    else
+        echo "warning: $spec uses rpmautospec but rpmautospec is not" \
+             "installed; release and changelog may be wrong" >&2
+    fi
 fi
 
 # Fetch sources that are listed with a URL. spectool ignores non-URL (locally

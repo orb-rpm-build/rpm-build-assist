@@ -56,6 +56,15 @@ dist-git
 * Fedora: ``https://src.fedoraproject.org/rpms/``
 * CentOS Stream: ``https://gitlab.com/redhat/centos-stream/rpms/``
 
+**Release and changelog handling**:
+
+If the spec uses the rpmautospec macros ``%autorelease`` / ``%autochangelog``,
+they are expanded from the git history before the src.rpm is built, the way
+Koji and ``fedpkg`` do. mock's SCM plugin does not run rpmautospec itself, so
+without this step those macros fall back to release ``1`` and a placeholder
+changelog. This requires the ``rpmautospec`` tool on the build host (a
+recommended dependency); specs that don't use the macros are left untouched.
+
 **Source handling**:
 
 Sources are assembled during checkout, before the src.rpm is built:
@@ -76,6 +85,7 @@ dist-git repositories you trust.
 * This is the default type if not specified
 * Works with ``rpkg`` or ``fedpkg`` tooling
 * A ``*sources.sh`` script, when present, is executed automatically
+* ``%autorelease`` / ``%autochangelog`` are expanded from the git history
 
 git
 ---

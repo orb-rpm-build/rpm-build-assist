@@ -16,6 +16,9 @@ Requires:       mock
 # Container install type is optional
 Suggests:       podman
 
+# Needed to expand %%autorelease / %%autochangelog in dist-git packages
+Recommends:     rpmautospec
+
 BuildRequires:  python3-devel
 
 %description

@@ -59,8 +59,9 @@ Validates container image building:
 Unit test for the `rpm-build-assist-src-get` helper (run by mock's SCM plugin
 as `distgit_src_get`). Unlike the `.yaml` tests, unit tests (`.sh` or `.py`)
 are run directly by the test runner and do **not** require mock. This one stubs
-`spectool` on `PATH` to verify the helper fetches online sources, runs any
-source-assembly script, and ignores non-fatal `spectool`/script exit codes.
+`spectool` and `rpmautospec` on `PATH` to verify the helper expands
+`%autorelease`/`%autochangelog`, fetches online sources, runs any
+source-assembly script, and tolerates missing tools and non-fatal exit codes.
 
 ### test-build-skip.py
 

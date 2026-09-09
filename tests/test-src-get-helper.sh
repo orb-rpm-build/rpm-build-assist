@@ -38,6 +38,19 @@ echo "$@" >> "$SPECTOOL_CALLS"
 exit "${SPECTOOL_EXIT:-0}"
 EOF
 chmod +x "$BIN/spectool"
+# Stub rpmautospec: records its args and, on success, "processes" the spec by
+# writing the target file with a recognizable marker so we can tell the helper
+# swapped it in. Exit status is controlled by RPMAUTOSPEC_EXIT.
+cat > "$BIN/rpmautospec" <<'EOF'
+#!/bin/sh
+echo "$@" >> "$RPMAUTOSPEC_CALLS"
+# args: process-distgit SRC TARGET
+if [ "${RPMAUTOSPEC_EXIT:-0}" -eq 0 ]; then
+    echo "processed-by-rpmautospec" > "$3"
+fi
+exit "${RPMAUTOSPEC_EXIT:-0}"
+EOF
+chmod +x "$BIN/rpmautospec"
 export PATH="$BIN:$PATH"
 
 # --- Case 1: runs spectool and a sources.sh, succeeds ---
@@ -47,6 +60,9 @@ run_case() {
     rm -rf "$CO"; mkdir -p "$CO"
     export SPECTOOL_CALLS="$WORK/spectool-calls"
     : > "$SPECTOOL_CALLS"
+    export RPMAUTOSPEC_CALLS="$WORK/rpmautospec-calls"
+    : > "$RPMAUTOSPEC_CALLS"
+    export RPMAUTOSPEC_EXIT=0
 }
 
 run_case
@@ -113,6 +129,44 @@ export SPECTOOL_EXIT=0
 ( cd "$CO" && "$HELPER" foo.spec ) >/dev/null 2>&1
 check "first *sources.sh ran" "yes" "$([ -e "$CO/a.done" ] && echo yes || echo no)"
 check "second *sources.sh ran" "yes" "$([ -e "$CO/b.done" ] && echo yes || echo no)"
+
+# --- Case 7: a spec using %autorelease is processed by rpmautospec ---
+run_case
+printf 'Release: %%autorelease\n%%changelog\n%%autochangelog\n' > "$CO/foo.spec"
+( cd "$CO" && "$HELPER" foo.spec ) >/dev/null 2>&1
+check "rpmautospec invoked for autospec spec" "process-distgit foo.spec foo.spec.rpmautospec" "$(cat "$RPMAUTOSPEC_CALLS")"
+check "processed spec swapped in" "processed-by-rpmautospec" "$(cat "$CO/foo.spec")"
+check "no leftover temp spec" "no" "$([ -e "$CO/foo.spec.rpmautospec" ] && echo yes || echo no)"
+
+# --- Case 8: a spec without rpmautospec macros is left untouched ---
+run_case
+printf 'Release: 1%%{?dist}\n' > "$CO/foo.spec"
+( cd "$CO" && "$HELPER" foo.spec ) >/dev/null 2>&1
+check "rpmautospec not invoked without macros" "" "$(cat "$RPMAUTOSPEC_CALLS")"
+check "non-autospec spec unchanged" "Release: 1%{?dist}" "$(cat "$CO/foo.spec")"
+
+# --- Case 9: rpmautospec failure is tolerated, spec left intact ---
+run_case
+printf 'Release: %%autorelease\n' > "$CO/foo.spec"
+export RPMAUTOSPEC_EXIT=1
+( cd "$CO" && "$HELPER" foo.spec ) >/dev/null 2>&1
+check "rpmautospec failure does not abort helper" "0" "$?"
+check "spec unchanged after rpmautospec failure" "Release: %autorelease" "$(cat "$CO/foo.spec")"
+check "no leftover temp spec after failure" "no" "$([ -e "$CO/foo.spec.rpmautospec" ] && echo yes || echo no)"
+
+# --- Case 10: rpmautospec absent -> warn and continue, spec left intact ---
+# Run with a PATH that provides the helper's coreutils but no rpmautospec.
+NOAUTO="$WORK/noauto"
+rm -rf "$NOAUTO"; mkdir -p "$NOAUTO"
+for tool in grep mv rm basename cat sh; do
+    ln -sf "$(command -v "$tool")" "$NOAUTO/$tool"
+done
+cp "$BIN/spectool" "$NOAUTO/spectool"
+run_case
+printf 'Release: %%autorelease\n' > "$CO/foo.spec"
+( cd "$CO" && PATH="$NOAUTO" "$HELPER" foo.spec ) >/dev/null 2>&1
+check "helper exits 0 when rpmautospec is absent" "0" "$?"
+check "spec unchanged when rpmautospec is absent" "Release: %autorelease" "$(cat "$CO/foo.spec")"
 
 echo
 if [ "$fails" -eq 0 ]; then
