@@ -6,7 +6,7 @@ Synopsis
 
 .. code-block:: text
 
-   rpm-build-assist [-h] [-c FILE] [-v] [--localrepo PATH]
+   rpm-build-assist [-h] [-c FILE] [-v] [-f] [--localrepo PATH]
 
 Description
 -----------
@@ -57,6 +57,17 @@ Options
 
    Use a persistent directory (not /tmp) to preserve builds between runs.
 
+.. option:: -f, --force
+
+   Rebuild even when the build cache indicates nothing has changed.
+
+   By default, before building a package rpm-build-assist resolves its branch
+   to a commit with ``git ls-remote`` and skips the entire checkout and build
+   when the commit, target config, and mock macros/repositories all match the
+   last successful build. ``--force`` ignores that cache and rebuilds.
+
+   See `Build cache`_ for details.
+
 Examples
 --------
 
@@ -90,12 +101,60 @@ Use persistent local repository
 
    ./rpm-build-assist --localrepo ~/rpm-builds/localrepo
 
+Force a rebuild
+~~~~~~~~~~~~~~~
+
+.. code-block:: bash
+
+   ./rpm-build-assist --localrepo ~/rpm-builds/localrepo --force
+
 Combine options
 ~~~~~~~~~~~~~~~
 
 .. code-block:: bash
 
    ./rpm-build-assist --verbose --config production.yaml --localrepo /var/cache/rpms
+
+Build cache
+-----------
+
+To avoid redoing work, rpm-build-assist skips a package when nothing that
+affects its output has changed since the last successful build.
+
+Before building, it resolves the package's branch to a commit with a single
+``git ls-remote`` (no clone). It then compares a key derived from that commit,
+the target ``base`` config, and the mock macros and additional repositories
+against the last recorded build. On a match, the checkout, src.rpm build, and
+chain build are all skipped.
+
+Where the record lives
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Each successful build writes a human-readable ``build-assist.result`` file into
+that package's result directory in the local repository. It is then linked into
+a ``build-assist.result-cache`` directory beside your configuration file, with
+one symlink per package::
+
+   build-assist.yaml
+   build-assist.result-cache/
+       demo -> /path/to/localrepo/results/fedora-44-x86_64/demo-1.0-1.fc44/build-assist.result
+
+Both locations are ordinary, visible files you can inspect or delete. To
+invalidate a cached build, remove **either** the symlink in
+``build-assist.result-cache`` **or** the package's result directory (a removed
+result directory leaves the symlink dangling, which counts as no cache).
+
+Notes:
+
+* The cache is only useful with a persistent :option:`--localrepo`; a temporary
+  one starts empty on every run.
+* If a branch can't be resolved to a commit (for example a raw commit hash used
+  as a ``git`` ref), the build is not skipped.
+* The record notes that a build succeeded; it does not re-verify every RPM. If
+  you remove RPMs by hand, remove the matching cache entry or use
+  :option:`--force` to rebuild.
+* If your configuration lives in a git repository, add
+  ``build-assist.result-cache/`` to ``.gitignore``.
 
 Exit status
 -----------

@@ -57,11 +57,18 @@ Validates container image building:
 ### test-src-get-helper.sh
 
 Unit test for the `rpm-build-assist-src-get` helper (run by mock's SCM plugin
-as `distgit_src_get`). Unlike the `.yaml` tests, shell tests end in `.sh`, are
-run directly by the test runner, and do **not** require mock. This one stubs
+as `distgit_src_get`). Unlike the `.yaml` tests, unit tests (`.sh` or `.py`)
+are run directly by the test runner and do **not** require mock. This one stubs
 `spectool` on `PATH` to verify the helper fetches online sources, runs any
-`*sources.sh` script, tolerates a `spectool` failure, and treats a
-`sources.sh` failure as fatal.
+source-assembly script, and ignores non-fatal `spectool`/script exit codes.
+
+### test-build-skip.py
+
+Unit test for the build cache that skips unchanged builds. It loads the script
+as a module and exercises the `git ls-remote` commit resolution and the
+result-cache symlink logic (recording a build, and invalidation by removing
+either the symlink or the result directory) against a throwaway local git
+repository (no mock required).
 
 ## Writing New Tests
 

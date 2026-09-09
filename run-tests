@@ -124,18 +124,21 @@ for test_file in "${TEST_FILES[@]}"; do
         continue
     fi
 
-    # Shell unit tests run directly and do not require mock
+    # Unit tests (shell or python) run directly and do not require mock
     case "$test_file" in
-        *.sh)
-            test_name=$(basename "$test_file" .sh)
+        *.sh|*.py)
+            case "$test_file" in
+                *.sh) test_name=$(basename "$test_file" .sh); runner=(bash) ;;
+                *.py) test_name=$(basename "$test_file" .py); runner=(python3) ;;
+            esac
             echo -n "Running $test_name... "
             set +e
             if [ "$VERBOSE" = true ]; then
                 echo
-                bash "$test_file"
+                "${runner[@]}" "$test_file"
                 result=$?
             else
-                bash "$test_file" > "/tmp/rpm-build-assist-test-$test_name.log" 2>&1
+                "${runner[@]}" "$test_file" > "/tmp/rpm-build-assist-test-$test_name.log" 2>&1
                 result=$?
             fi
             set -e
