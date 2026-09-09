@@ -83,16 +83,21 @@ rc=$?
 check "spectool failure does not abort helper" "0" "$rc"
 check "sources.sh still ran after spectool failure" "yes" "$([ -e "$CO/generated.tar.gz" ] && echo yes || echo no)"
 
-# --- Case 4: sources.sh failure propagates ---
+# --- Case 4: sources.sh failure is ignored ---
+# Source-assembly scripts have unreliable exit status (e.g. failing to upload
+# to a lookaside cache when offline), so a non-zero exit is not treated as
+# fatal; a genuinely missing source fails later during src.rpm assembly.
 run_case
 : > "$CO/foo.spec"
 cat > "$CO/gen-sources.sh" <<'EOF'
 #!/bin/sh
+touch generated.tar.gz
 exit 3
 EOF
 export SPECTOOL_EXIT=0
 ( cd "$CO" && "$HELPER" foo.spec ) >/dev/null 2>&1
-check "sources.sh failure is fatal (non-zero exit)" "yes" "$([ $? -ne 0 ] && echo yes || echo no)"
+check "sources.sh failure does not abort helper" "0" "$?"
+check "sources.sh still ran despite failing exit" "yes" "$([ -e "$CO/generated.tar.gz" ] && echo yes || echo no)"
 
 # --- Case 5: missing spec argument -> usage error ---
 export SPECTOOL_EXIT=0

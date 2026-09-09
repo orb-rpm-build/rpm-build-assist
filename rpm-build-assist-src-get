@@ -4,8 +4,8 @@
 # mock's SCM plugin invokes this as its "distgit_src_get" command, running it
 # on the host in the freshly checked-out package directory. It first fetches
 # any sources that are published online (via spectool), then runs any
-# repository-provided "*sources.sh" script to assemble the sources that are not
-# available for direct download.
+# repository-provided source-assembly script (a name ending in "source.sh" or
+# "sources.sh") to assemble the sources that are not available for download.
 #
 # Missing sources are intentionally NOT diagnosed here: if a source the spec
 # references is still absent afterwards, mock's src.rpm assembly fails and
@@ -27,9 +27,10 @@ fi
 spectool -g "$spec" || echo "warning: spectool exited non-zero; continuing" >&2
 
 # Assemble any remaining sources using a repository-provided script. The exact
-# name varies between projects; the convention is a name ending in "sources.sh".
-# Unlike spectool, a failure here IS fatal: the script is meant to produce
-# sources, so a non-zero exit means it could not.
+# name varies between projects (commonly ending in "source.sh" or "sources.sh").
+# Their exit status is unreliable -- some try to upload archives to a lookaside
+# cache and fail when offline -- so, like spectool, a non-zero exit is ignored.
+# If a source is genuinely missing, src.rpm assembly fails and reports it.
 for script in ./*source*.sh; do
     # If the glob matched nothing it stays literal; skip that case.
     [ -e "$script" ] || continue
