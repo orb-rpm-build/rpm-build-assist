@@ -101,6 +101,56 @@ packages
      - mylib:v1.0.0         # Tag 'v1.0.0'
      - another-package      # Defaults to 'main'
 
+with
+~~~~
+
+**Required**: No
+
+**Type**: String or list of strings
+
+**Description**: Enable RPM conditional-build (``%bcond``) options, one per
+value. Each becomes a ``mock --with=<name>`` argument applied to every package
+in this source, at both src.rpm assembly and the binary build, so spec
+conditionals resolve consistently.
+
+without
+~~~~~~~
+
+**Required**: No
+
+**Type**: String or list of strings
+
+**Description**: Disable RPM conditional-build (``%bcond``) options, the inverse
+of ``with``. Each value becomes a ``mock --without=<name>`` argument.
+
+define
+~~~~~~
+
+**Required**: No
+
+**Type**: String or list of strings
+
+**Description**: Define arbitrary RPM macros. Each value is a
+``macro-name value`` pair and becomes a ``mock --define=<value>`` argument.
+
+**Example**:
+
+.. code-block:: yaml
+
+   build:
+     - type: dist-git
+       url: https://src.fedoraproject.org/rpms/
+       with: [python3, docs]     # --with=python3 --with=docs
+       without: tests            # --without=tests
+       define: "debug_package 1" # --define=debug_package 1
+       packages:
+         - htop:rawhide
+         - vim:rawhide
+
+Because these flags apply to the whole source definition, build packages that
+need different flags under separate source definitions (repeating the same
+``type`` and ``url``).
+
 Multiple source definitions
 ---------------------------
 

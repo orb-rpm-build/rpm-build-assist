@@ -26,6 +26,12 @@ build:
   # Example 1: Build from Fedora dist-git
   - type: dist-git
     url: https://src.fedoraproject.org/rpms/
+    # Optional: conditional-build toggles and macros for this source's packages.
+    # Each maps to a mock flag (--with=/--without=/--define=) and applies to
+    # both the src.rpm and binary build. Accepts a string or a list.
+    # with: [python3, docs]
+    # without: tests
+    # define: "debug_package 1"
     packages:
       # Format: package-name:branch
       - htop:rawhide

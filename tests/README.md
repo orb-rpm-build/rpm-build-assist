@@ -68,8 +68,14 @@ source-assembly script, and tolerates missing tools and non-fatal exit codes.
 Unit test for the build cache that skips unchanged builds. It loads the script
 as a module and exercises the `git ls-remote` commit resolution and the
 result-cache symlink logic (recording a build, and invalidation by removing
-either the symlink or the result directory) against a throwaway local git
-repository (no mock required).
+either the symlink or the result directory, or by changing build flags) against
+a throwaway local git repository (no mock required).
+
+### test-build-flags.py
+
+Unit test for per-source `with`/`without`/`define` fields. It loads the script
+as a module and verifies they translate into the expected `mock`
+`--with=`/`--without=`/`--define=` arguments (no mock required).
 
 ## Writing New Tests
 

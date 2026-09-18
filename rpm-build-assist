@@ -312,6 +312,12 @@ class MockBuildAssistant:
 
             self.logger.info(f"Processing build source: {source_url} (type: {source_type})")
 
+            # Conditional-build toggles and macros shared by this source's
+            # packages (see _parse_build_flags).
+            build_flags = self._parse_build_flags(build_source)
+            if build_flags:
+                self.logger.info(f"Build flags: {' '.join(build_flags)}")
+
             for package_spec in packages:
                 # Parse package:branch format
                 if ':' in package_spec:
@@ -321,7 +327,39 @@ class MockBuildAssistant:
                     branch = 'main'
 
                 self.logger.info(f"Building package: {package} (branch: {branch})")
-                self._build_package(base_config, source_type, source_url, package, branch)
+                self._build_package(base_config, source_type, source_url,
+                                    package, branch, build_flags)
+
+    def _parse_build_flags(self, build_source: Dict[str, Any]) -> List[str]:
+        """
+        Translate a build source's with/without/define fields into mock
+        arguments applied to every package in that source.
+
+        - ``with: NAME`` or ``with: [NAME, ...]``       -> ``--with=NAME``
+        - ``without: NAME`` or ``without: [NAME, ...]``  -> ``--without=NAME``
+        - ``define: "MACRO VALUE"`` or a list of them    -> ``--define=MACRO VALUE``
+
+        ``with``/``without`` toggle RPM conditional-build (%bcond) options and
+        ``define`` sets arbitrary macros. All are passed to both the src.rpm and
+        the chain build so that spec conditionals resolve consistently.
+        """
+        flags: List[str] = []
+        for field, option in (('with', '--with'), ('without', '--without'),
+                              ('define', '--define')):
+            if field not in build_source:
+                continue
+            value = build_source[field]
+            if isinstance(value, str):
+                values = [value]
+            elif isinstance(value, list):
+                values = value
+            else:
+                self.logger.error(
+                    f"'{field}' field must be a string or list of strings")
+                sys.exit(1)
+            for item in values:
+                flags.append(f'{option}={item}')
+        return flags
 
     def _resolve_src_get_helper(self) -> str:
         """
@@ -373,13 +411,15 @@ class MockBuildAssistant:
         first = result.stdout.strip().split('\n')[0]
         return first.split('\t')[0] if '\t' in first else None
 
-    def _build_cache_key(self, commit: str, base_config: str) -> str:
+    def _build_cache_key(self, commit: str, base_config: str,
+                         build_flags: Optional[List[str]] = None) -> str:
         """
         Compute a cache key covering everything that affects the built output:
-        the source commit, the target config, and the macros/repos we pass to
-        mock. A change to any of these invalidates a prior build.
+        the source commit, the target config, and the macros/repos/flags we
+        pass to mock. A change to any of these invalidates a prior build.
         """
-        parts = [commit, base_config] + sorted(self.mock_defines) + sorted(self.addrepo_urls)
+        parts = ([commit, base_config] + sorted(self.mock_defines)
+                 + sorted(self.addrepo_urls) + sorted(build_flags or []))
         return hashlib.sha256('\n'.join(parts).encode()).hexdigest()
 
     def _result_cache_dir(self) -> Path:
@@ -407,7 +447,8 @@ class MockBuildAssistant:
         return None
 
     def _build_is_current(self, base_config: str, package: str,
-                          commit: Optional[str]) -> bool:
+                          commit: Optional[str],
+                          build_flags: Optional[List[str]] = None) -> bool:
         """Return True if a matching successful build is already recorded."""
         if commit is None or self.force_rebuild:
             return False
@@ -417,10 +458,12 @@ class MockBuildAssistant:
         # either the symlink or the result directory invalidates the cache.
         if not link.exists():
             return False
-        return self._read_record_key(link) == self._build_cache_key(commit, base_config)
+        return self._read_record_key(link) == \
+            self._build_cache_key(commit, base_config, build_flags)
 
     def _record_build(self, base_config: str, package: str,
-                      commit: Optional[str], src_rpm: str) -> None:
+                      commit: Optional[str], src_rpm: str,
+                      build_flags: Optional[List[str]] = None) -> None:
         """
         Record a successful build so an unchanged re-run can be skipped.
 
@@ -442,7 +485,7 @@ class MockBuildAssistant:
                 f"Result directory not found, not caching: {result_dir}")
             return
 
-        key = self._build_cache_key(commit, base_config)
+        key = self._build_cache_key(commit, base_config, build_flags)
         record = result_dir / 'build-assist.result'
         record.write_text(
             '# rpm-build-assist build record\n'
@@ -459,8 +502,11 @@ class MockBuildAssistant:
         link.symlink_to(record.resolve())
 
     def _build_package(self, base_config: str, source_type: str,
-                       source_url: str, package: str, branch: str) -> None:
+                       source_url: str, package: str, branch: str,
+                       build_flags: Optional[List[str]] = None) -> None:
         """Build a single package using mock"""
+        build_flags = build_flags or []
+
         # Construct the full repository URL
         if not source_url.endswith('/'):
             source_url += '/'
@@ -471,7 +517,7 @@ class MockBuildAssistant:
         # Skip the whole clone -> src.rpm -> chain sequence when the source
         # commit and build inputs are unchanged since the last successful build.
         commit = self._resolve_remote_commit(repo_url, branch)
-        if self._build_is_current(base_config, package, commit):
+        if self._build_is_current(base_config, package, commit, build_flags):
             self.logger.info(
                 f"Skipping {package}: {branch} unchanged since last successful "
                 f"build ({commit[:12]}); use --force to rebuild")
@@ -513,6 +559,10 @@ class MockBuildAssistant:
                 '--scm-option', 'write_tar=True',
                 '--scm-option', f'git_get=git clone --branch {branch} {repo_url} {package}',
             ])
+
+        # Pass build flags so conditionals resolve the same way when the
+        # src.rpm is assembled as they will during the binary build.
+        mock_cmd.extend(build_flags)
 
         # Add additional repositories
         for repo_url in self.addrepo_urls:
@@ -569,6 +619,9 @@ class MockBuildAssistant:
         for define in self.mock_defines:
             mock_cmd.append(define)
 
+        # Add build flags (with/without/define) for this source's packages
+        mock_cmd.extend(build_flags)
+
         # Add additional repositories
         for repo_url in self.addrepo_urls:
             mock_cmd.extend(['--addrepo', repo_url])
@@ -597,7 +650,7 @@ class MockBuildAssistant:
 
         # Both the src.rpm and chain builds succeeded; record it so an
         # unchanged re-run can skip the whole sequence.
-        self._record_build(base_config, package, commit, src_rpm)
+        self._record_build(base_config, package, commit, src_rpm, build_flags)
 
     def process_install(self) -> None:
         """Process the install section if present"""

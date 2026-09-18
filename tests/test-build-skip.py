@@ -130,6 +130,17 @@ def main():
     check("addrepo change invalidates cache", False, a._build_is_current(cfg, pkg, commit))
     a.addrepo_urls = []
 
+    # Build flags (with/without/define) participate in the cache key.
+    a._record_build(cfg, pkg, commit, src_rpm, ["--with=py3"])
+    check("current with matching build flags", True,
+          a._build_is_current(cfg, pkg, commit, ["--with=py3"]))
+    check("different build flags invalidate cache", False,
+          a._build_is_current(cfg, pkg, commit, ["--without=py3"]))
+    check("dropping build flags invalidates cache", False,
+          a._build_is_current(cfg, pkg, commit))
+    # Restore a flag-less record for the remaining checks.
+    a._record_build(cfg, pkg, commit, src_rpm)
+
     # A different base config is a different build.
     check("different base config is not current", False,
           a._build_is_current("other", pkg, commit))
