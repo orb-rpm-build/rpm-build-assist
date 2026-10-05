@@ -7,7 +7,11 @@
 #   1. Expands the rpmautospec %autorelease / %autochangelog macros from the
 #      git history, the way Koji and fedpkg do.
 #   2. Fetches any sources that are published online (via spectool).
-#   3. Runs any repository-provided source-assembly script (a name ending in
+#   3. Fetches sources stored only in a lookaside cache: a Fedora-style
+#      "sources" manifest is fetched with fedpkg, and an rpkg "rpkg.conf" with
+#      rpkg. Specs that reference such files by bare name have no URL spectool
+#      could use.
+#   4. Runs any repository-provided source-assembly script (a name ending in
 #      "source.sh" or "sources.sh") to assemble sources not available online.
 #
 # Missing sources are intentionally NOT diagnosed here: if a source the spec
@@ -49,6 +53,34 @@ fi
 # treat a spectool failure as fatal. A genuinely missing source surfaces later
 # during src.rpm assembly.
 spectool -g "$spec" || echo "warning: spectool exited non-zero; continuing" >&2
+
+# Fetch sources that live only in a lookaside cache. spectool cannot get these
+# because the spec lists them by bare filename, with no URL. The manifest/config
+# files present in the checkout tell us which cache to ask, and each is handled
+# independently so a repository configured for both is fully served. As with
+# spectool, failures (offline, an unrecognized remote) are not fatal: a
+# genuinely missing source surfaces during src.rpm assembly.
+if [ -f sources ]; then
+    if command -v fedpkg >/dev/null 2>&1; then
+        name=$(rpmspec -q --srpm --qf '%{name}\n' "$spec" 2>/dev/null | head -1)
+        [ -n "$name" ] || name=$(sed -n 's/^Name:[[:space:]]*//p' "$spec" | head -1)
+        echo "Fetching lookaside sources with fedpkg (--name $name)"
+        fedpkg --name "$name" sources \
+            || echo "warning: fedpkg sources failed; continuing" >&2
+    else
+        echo "warning: a 'sources' manifest is present but fedpkg is not" \
+             "installed; lookaside sources may be missing" >&2
+    fi
+fi
+if [ -f rpkg.conf ]; then
+    if command -v rpkg >/dev/null 2>&1; then
+        echo "Fetching lookaside sources with rpkg"
+        rpkg sources || echo "warning: rpkg sources failed; continuing" >&2
+    else
+        echo "warning: an 'rpkg.conf' is present but rpkg is not installed;" \
+             "lookaside sources may be missing" >&2
+    fi
+fi
 
 # Assemble any remaining sources using a repository-provided script. The exact
 # name varies between projects (commonly ending in "source.sh" or "sources.sh").

@@ -19,6 +19,10 @@ Suggests:       podman
 # Needed to expand %%autorelease / %%autochangelog in dist-git packages
 Recommends:     rpmautospec
 
+# Used to fetch dist-git sources from a lookaside cache (Fedora and rpkg)
+Recommends:     fedpkg
+Recommends:     rpkg
+
 BuildRequires:  python3-devel
 
 %description

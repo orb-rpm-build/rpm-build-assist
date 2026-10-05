@@ -51,6 +51,20 @@ fi
 exit "${RPMAUTOSPEC_EXIT:-0}"
 EOF
 chmod +x "$BIN/rpmautospec"
+# Stub fedpkg and rpkg: record their args and exit per *_EXIT so we can test
+# which lookaside client the helper invokes and that failures are tolerated.
+cat > "$BIN/fedpkg" <<'EOF'
+#!/bin/sh
+echo "$@" >> "$FEDPKG_CALLS"
+exit "${FEDPKG_EXIT:-0}"
+EOF
+chmod +x "$BIN/fedpkg"
+cat > "$BIN/rpkg" <<'EOF'
+#!/bin/sh
+echo "$@" >> "$RPKG_CALLS"
+exit "${RPKG_EXIT:-0}"
+EOF
+chmod +x "$BIN/rpkg"
 export PATH="$BIN:$PATH"
 
 # --- Case 1: runs spectool and a sources.sh, succeeds ---
@@ -63,6 +77,12 @@ run_case() {
     export RPMAUTOSPEC_CALLS="$WORK/rpmautospec-calls"
     : > "$RPMAUTOSPEC_CALLS"
     export RPMAUTOSPEC_EXIT=0
+    export FEDPKG_CALLS="$WORK/fedpkg-calls"
+    : > "$FEDPKG_CALLS"
+    export FEDPKG_EXIT=0
+    export RPKG_CALLS="$WORK/rpkg-calls"
+    : > "$RPKG_CALLS"
+    export RPKG_EXIT=0
 }
 
 run_case
@@ -167,6 +187,59 @@ printf 'Release: %%autorelease\n' > "$CO/foo.spec"
 ( cd "$CO" && PATH="$NOAUTO" "$HELPER" foo.spec ) >/dev/null 2>&1
 check "helper exits 0 when rpmautospec is absent" "0" "$?"
 check "spec unchanged when rpmautospec is absent" "Release: %autorelease" "$(cat "$CO/foo.spec")"
+
+# --- Case 11: a "sources" manifest triggers fedpkg, not rpkg ---
+run_case
+: > "$CO/foo.spec"
+: > "$CO/sources"
+( cd "$CO" && "$HELPER" foo.spec ) >/dev/null 2>&1
+check "fedpkg invoked for sources manifest" "sources" "$(cat "$FEDPKG_CALLS")"
+check "rpkg not invoked without rpkg.conf" "" "$(cat "$RPKG_CALLS")"
+
+# --- Case 12: an rpkg.conf triggers rpkg, not fedpkg ---
+run_case
+: > "$CO/foo.spec"
+: > "$CO/rpkg.conf"
+( cd "$CO" && "$HELPER" foo.spec ) >/dev/null 2>&1
+check "rpkg invoked for rpkg.conf" "sources" "$(cat "$RPKG_CALLS")"
+check "fedpkg not invoked without sources manifest" "" "$(cat "$FEDPKG_CALLS")"
+
+# --- Case 13: neither file present -> neither client invoked ---
+run_case
+: > "$CO/foo.spec"
+( cd "$CO" && "$HELPER" foo.spec ) >/dev/null 2>&1
+check "fedpkg not invoked without hint files" "" "$(cat "$FEDPKG_CALLS")"
+check "rpkg not invoked without hint files" "" "$(cat "$RPKG_CALLS")"
+
+# --- Case 14: both files present -> both clients invoked independently ---
+run_case
+: > "$CO/foo.spec"
+: > "$CO/sources"
+: > "$CO/rpkg.conf"
+( cd "$CO" && "$HELPER" foo.spec ) >/dev/null 2>&1
+check "fedpkg invoked when both hints present" "sources" "$(cat "$FEDPKG_CALLS")"
+check "rpkg invoked when both hints present" "sources" "$(cat "$RPKG_CALLS")"
+
+# --- Case 15: a failing lookaside client does not abort the helper ---
+run_case
+: > "$CO/foo.spec"
+: > "$CO/sources"
+export FEDPKG_EXIT=1
+( cd "$CO" && "$HELPER" foo.spec ) >/dev/null 2>&1
+check "fedpkg failure does not abort helper" "0" "$?"
+
+# --- Case 16: a hint with no client installed warns but continues ---
+NOCLIENT="$WORK/noclient"
+rm -rf "$NOCLIENT"; mkdir -p "$NOCLIENT"
+for tool in grep mv rm basename cat sh; do
+    ln -sf "$(command -v "$tool")" "$NOCLIENT/$tool"
+done
+cp "$BIN/spectool" "$NOCLIENT/spectool"
+run_case
+: > "$CO/foo.spec"
+: > "$CO/sources"
+( cd "$CO" && PATH="$NOCLIENT" "$HELPER" foo.spec ) >/dev/null 2>&1
+check "helper exits 0 when lookaside client is absent" "0" "$?"
 
 echo
 if [ "$fails" -eq 0 ]; then

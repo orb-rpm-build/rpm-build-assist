@@ -70,12 +70,21 @@ recommended dependency); specs that don't use the macros are left untouched.
 Sources are assembled during checkout, before the src.rpm is built:
 
 1. Sources listed with a URL are fetched with ``spectool``.
-2. If the repository contains a script whose name ends in ``sources.sh``,
+2. Sources that live only in a lookaside cache (specs often list these by bare
+   filename, with no URL) are fetched by the matching client, if its hint file
+   is present in the checkout:
+
+   * a Fedora-style ``sources`` manifest is fetched with ``fedpkg``;
+   * an rpkg ``rpkg.conf`` is fetched with ``rpkg``.
+
+   Each is handled independently, so a repository configured for both is fully
+   served. The clients (recommended dependencies) verify the recorded hashes.
+3. If the repository contains a script whose name ends in ``sources.sh``,
    it is run to assemble the remaining sources. Some non-Fedora dist-git
    projects use such a script to generate tarballs (for example from an
    upstream git tag) instead of a lookaside cache.
 
-Both steps run on the host, in the checkout directory. If a source the spec
+These steps run on the host, in the checkout directory. If a source the spec
 references is still missing afterwards, src.rpm assembly fails and reports the
 missing file. Because these scripts execute during the build, only build from
 dist-git repositories you trust.
@@ -84,6 +93,8 @@ dist-git repositories you trust.
 
 * This is the default type if not specified
 * Works with ``rpkg`` or ``fedpkg`` tooling
+* Lookaside sources are fetched from a ``sources`` manifest (fedpkg) or an
+  ``rpkg.conf`` (rpkg), whichever is present
 * A ``*sources.sh`` script, when present, is executed automatically
 * ``%autorelease`` / ``%autochangelog`` are expanded from the git history
 
