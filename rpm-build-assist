@@ -528,6 +528,32 @@ class MockBuildAssistant:
         if srpm_dir.exists():
             shutil.rmtree(srpm_dir)
 
+        # Write RPM macro definitions to a file for mock to use. spectool
+        # (run by the src-get helper) needs these to expand macros in Source URLs.
+        macro_file = None
+        spectool_defines = []
+        for define in self.mock_defines:
+            if define.startswith('--define='):
+                spectool_defines.append(define[len('--define='):])
+        if build_flags:
+            for flag in build_flags:
+                if flag.startswith('--define='):
+                    spectool_defines.append(flag[len('--define='):])
+
+        if spectool_defines:
+            # Create a temporary macro file in RPM format
+            import tempfile
+            fd, macro_file = tempfile.mkstemp(prefix='rpm-build-assist-', suffix='.macros', text=True)
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    for define in spectool_defines:
+                        # defines are in "MACRO VALUE" format; convert to "%MACRO VALUE"
+                        f.write(f'%{define}\n')
+            except:
+                if macro_file:
+                    os.unlink(macro_file)
+                raise
+
         # Build mock command
         mock_cmd = [
             'mock',
@@ -549,10 +575,14 @@ class MockBuildAssistant:
             # exactly where mock's SCM plugin runs distgit_src_get. When no
             # such script exists this behaves the same as plain 'spectool -g'.
             helper = self._resolve_src_get_helper()
+            helper_cmd = f'{helper} {package}.spec'
+            if macro_file:
+                # Pass macro file path as second argument for spectool
+                helper_cmd += f' {macro_file}'
             mock_cmd.extend([
                 '--scm-option', 'write_tar=False',
                 '--scm-option', f'distgit_get=git clone --branch {branch} {repo_url} {package}',
-                '--scm-option', f'distgit_src_get={helper} {package}.spec',
+                '--scm-option', f'distgit_src_get={helper_cmd}',
             ])
         elif source_type == 'git':
             mock_cmd.extend([
@@ -589,6 +619,13 @@ class MockBuildAssistant:
             if hasattr(e, 'stderr') and e.stderr:
                 self.logger.error(f"Error output: {e.stderr}")
             sys.exit(1)
+        finally:
+            # Clean up temporary macro file
+            if macro_file:
+                try:
+                    os.unlink(macro_file)
+                except OSError:
+                    pass
 
         # Build mock command
         mock_cmd = [

@@ -132,6 +132,9 @@ define
 
 **Description**: Define arbitrary RPM macros. Each value is a
 ``macro-name value`` pair and becomes a ``mock --define=<value>`` argument.
+These macros are available during source fetching (``spectool``), so they can
+be used to expand macros in ``Source`` URLs, as well as during spec parsing
+and the build itself.
 
 **Example**:
 

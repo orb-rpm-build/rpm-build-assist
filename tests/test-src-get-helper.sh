@@ -190,10 +190,10 @@ check "spec unchanged when rpmautospec is absent" "Release: %autorelease" "$(cat
 
 # --- Case 11: a "sources" manifest triggers fedpkg, not rpkg ---
 run_case
-: > "$CO/foo.spec"
+printf 'Name: testpkg\n' > "$CO/foo.spec"
 : > "$CO/sources"
 ( cd "$CO" && "$HELPER" foo.spec ) >/dev/null 2>&1
-check "fedpkg invoked for sources manifest" "sources" "$(cat "$FEDPKG_CALLS")"
+check "fedpkg invoked for sources manifest" "--name testpkg sources" "$(cat "$FEDPKG_CALLS")"
 check "rpkg not invoked without rpkg.conf" "" "$(cat "$RPKG_CALLS")"
 
 # --- Case 12: an rpkg.conf triggers rpkg, not fedpkg ---
@@ -213,11 +213,11 @@ check "rpkg not invoked without hint files" "" "$(cat "$RPKG_CALLS")"
 
 # --- Case 14: both files present -> both clients invoked independently ---
 run_case
-: > "$CO/foo.spec"
+printf 'Name: testpkg\n' > "$CO/foo.spec"
 : > "$CO/sources"
 : > "$CO/rpkg.conf"
 ( cd "$CO" && "$HELPER" foo.spec ) >/dev/null 2>&1
-check "fedpkg invoked when both hints present" "sources" "$(cat "$FEDPKG_CALLS")"
+check "fedpkg invoked when both hints present" "--name testpkg sources" "$(cat "$FEDPKG_CALLS")"
 check "rpkg invoked when both hints present" "sources" "$(cat "$RPKG_CALLS")"
 
 # --- Case 15: a failing lookaside client does not abort the helper ---

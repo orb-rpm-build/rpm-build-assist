@@ -21,9 +21,19 @@
 set -eu
 
 spec="${1:-}"
+macros_file="${2:-}"
+
 if [ -z "$spec" ]; then
-    echo "usage: $(basename "$0") SPECFILE" >&2
+    echo "usage: $(basename "$0") SPECFILE [MACROFILE]" >&2
     exit 2
+fi
+
+# If a macro file was provided, copy it to .rpmmacros in the current directory
+# and set HOME so spectool reads it. spectool reads ~/.rpmmacros by default.
+if [ -n "$macros_file" ] && [ -f "$macros_file" ]; then
+    cp "$macros_file" .rpmmacros
+    trap 'rm -f .rpmmacros' EXIT
+    export HOME="$(pwd)"
 fi
 
 # Expand rpmautospec's %autorelease / %autochangelog from the git history.
